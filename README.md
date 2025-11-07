@@ -289,3 +289,10 @@ Before considering live trading:
 *Phase 1 Implementation - November 6, 2024*  
 *For $1,000 starting capital, observation mode first*  
 *QuantConnect + Interactive Brokers*
+
+## Safety Checklist (quick runbook)
+- `OBSERVATION_MODE` = **True** unless you explicitly want live orders.
+- `REQUIRE_CONFIRM` = **true** (asks before placing any order).
+- `MAX_DAILY_LOSS` = 1% NAV (halts trading for the day if breached).
+- `MAX_TRADES_PER_DAY` = 2 (prevents overtrading).
+- Use `.env` for secrets (never commit it). See `.env.example`.

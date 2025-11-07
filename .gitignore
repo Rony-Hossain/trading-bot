@@ -72,3 +72,5 @@ Thumbs.db
 # Local IDE / user files
 *.swp
 *.swo
+
+.env
