@@ -6,31 +6,43 @@
 
 ## ⚡ Super Fast Start (3 Steps)
 
-### 1️⃣ Run Deployment Script
-```bash
-cd extreme-aware-strategy
-./deploy_to_qc.sh
+### 1️⃣ Configure Your Strategy
+
+**Choose your configuration** in `src/main.py` line 85:
+
+```python
+# Week 1-4: Learn basics
+self.config = Config(version=1, trading_enabled=False)
+
+# Week 5-8: Test advanced features (recommended)
+self.config = Config(version=2, trading_enabled=False)  # ← START HERE
+
+# Week 9+: Go live
+self.config = Config(version=2, trading_enabled=True)
 ```
 
-This creates a `quantconnect/` folder with all files ready to upload.
+**Recommended:** Start with `version=2, trading_enabled=False` to test all features safely!
 
 ### 2️⃣ Upload to QuantConnect
+
 1. Go to https://www.quantconnect.com
-2. Create new algorithm: "Extreme-Aware-Phase1"
-3. Upload files from `quantconnect/` folder in this order:
-   - config.py
-   - universe_filter.py
-   - extreme_detector.py
-   - hmm_regime.py
-   - avwap_tracker.py
-   - risk_monitor.py
-   - main.py (LAST!)
+2. Create new algorithm: "Extreme-Aware-v2"
+3. Upload files in this order:
+   - **config.py** (from `config/` folder)
+   - All component files (from `src/components/`)
+   - **main.py** (from `src/` folder) - **UPLOAD LAST!**
 
 ### 3️⃣ Run Backtest
+
 1. Click "Backtest" button
 2. Wait 2-5 minutes
-3. Check logs for extremes detected
-4. Deploy to Paper Trading
+3. Check initialization logs:
+   ```
+   EXTREME-AWARE STRATEGY - V2 (ADVANCED) - OBSERVATION
+   Version: 2 | Mode: OBSERVATION (no trades)
+   ```
+4. Review detection logs
+5. Deploy to Paper Trading when ready
 
 **Done! 🎉**
 

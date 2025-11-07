@@ -51,6 +51,9 @@ venv.bak/
 # PyCharm
 .idea/
 
+
+.claude/
+
 # Jupyter Notebook
 .ipynb_checkpoints
 

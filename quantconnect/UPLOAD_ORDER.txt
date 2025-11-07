@@ -1,34 +1,19 @@
-# QuantConnect Upload Order
-
-Upload these files to QuantConnect in this exact order:
-
-1. config.py              ← Configuration (no dependencies)
-2. logger.py              ← Logging system (no dependencies)
-3. log_retrieval.py       ← Log retrieval (for notebooks, optional)
-4. universe_filter.py     ← Universe selection
-5. extreme_detector.py    ← Extreme detection
-6. hmm_regime.py         ← HMM regime classifier
-7. avwap_tracker.py      ← A-VWAP tracking
-8. risk_monitor.py       ← Risk monitoring
-9. main.py               ← Main algorithm (LAST!)
-
-## How to Upload
-
-1. Go to https://www.quantconnect.com
-2. Create new algorithm: "Extreme-Aware-Phase1"
-3. For each file above:
-   - Click "+" in file explorer
-   - Select "Upload File"
-   - Choose the file
-   - Click "Upload"
-4. After all files uploaded, click "Backtest"
-5. Check logs for errors
-
-## Important
-
-- Upload in ORDER (config.py first, main.py last)
-- All files must be in ROOT of QC project (no folders)
-- Set OBSERVATION_MODE = True for safety
-- Use Paper Trading, not live account
-
-See DEPLOYMENT.md for detailed instructions.
+main.py
+config.py
+logger.py
+log_retrieval.py
+universe_filter.py
+extreme_detector.py
+hmm_regime.py
+avwap_tracker.py
+risk_monitor.py
+alert_manager.py
+backtest_analyzer.py
+health_monitor.py
+cascade_prevention.py
+drawdown_enforcer.py
+dynamic_sizer.py
+entry_timing.py
+exhaustion_detector.py
+portfolio_constraints.py
+pvs_monitor.py
