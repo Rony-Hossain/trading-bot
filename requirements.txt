@@ -1,0 +1,11 @@
+# Minimal requirements for running unit tests and component utilities locally.
+# Note: The QuantConnect runtime (AlgorithmImports) is not available via pip.
+# To run tests locally you'll need lightweight shims/mocks for QuantConnect APIs
+# or run tests inside the QuantConnect environment.
+
+# Numerical and testing libraries
+numpy>=1.25
+pytest>=7.0
+
+# Optional (only if you add tests or use dataframes locally)
+# pandas>=2.2
