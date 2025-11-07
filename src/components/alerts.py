@@ -13,7 +13,7 @@ def _slack_post(text: str) -> None:
 
 def notify_extreme(symbol: str, z: float, volx: float, direction: str, avwap_bps: float | None = None) -> None:
     tail = f" | aVWAP {avwap_bps:.0f} bps" if avwap_bps is not None else ""
-    msg = f"EXTREME  {symbol}  z={z:.2f}  vol{volx:.1f}x  dir={direction}{tail}"
+    msg = f"EXTREME ⏱ {symbol}  z={z:.2f}  vol≈{volx:.1f}x  dir={direction}{tail}"
     print(msg, flush=True)
     _slack_post(msg)
 
