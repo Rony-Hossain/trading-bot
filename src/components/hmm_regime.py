@@ -197,7 +197,21 @@ class HMMRegime:
         self.is_fitted = True
         self.last_fit_date = self.algorithm.Time.date()
         self.algorithm.Log("HMM: Using simplified regime detection (Phase 1)")
-    
+
+    def GetCurrentRegime(self):
+        """
+        Get current regime state (convenience wrapper)
+
+        Returns:
+            dict: Current regime information with keys:
+                - dominant_state: str ('Low-Vol', 'High-Vol', or 'Trending')
+                - state_probs: dict of state probabilities
+                - gpm: float (Global Position Multiplier, 0.3-1.0)
+                - requires_2x_edge: bool (if high-vol regime)
+                - correlation_breakdown: float (0.0-1.0)
+        """
+        return self.Update(self.algorithm.Time)
+
     def GetGlobalPositionMultiplier(self):
         """
         Get the current Global Position Multiplier (GPM)

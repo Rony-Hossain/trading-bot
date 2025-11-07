@@ -45,17 +45,7 @@ class Config:
         Args:
             version: 1 (basic) or 2 (advanced features)
             trading_enabled: False (observation) or True (live trading)
-
-        Raises:
-            ValueError: If version is invalid or configuration validation fails
         """
-        # Validate inputs
-        if version not in [1, 2]:
-            raise ValueError(f"version must be 1 or 2, got {version}")
-
-        if not isinstance(trading_enabled, bool):
-            raise ValueError(f"trading_enabled must be bool, got {type(trading_enabled)}")
-
         self.version = version
         self.trading_enabled = trading_enabled
 
@@ -96,9 +86,6 @@ class Config:
         self.HMM_FIT_WINDOW_DAYS = 500  # ~24 months of trading days
         self.HMM_REFIT_DAYS = 20  # Refit monthly
         self.MIN_BARS_FOR_HMM = 240  # Need 4 hours minimum
-
-        # Validate all configuration parameters
-        self._validate()
 
         # ==================== A-VWAP TRACKER ====================
         self.AVWAP_ATR_MULTIPLIER = 0.5  # Stop distance in ATRs
@@ -184,34 +171,112 @@ class Config:
         self.MIN_BARS_FOR_DETECTION = 60
         self.MIN_BARS_FOR_HMM = 240
 
-        # Validate all configuration parameters
-        self._validate()
-
-    def _validate(self):
-        """Validate configuration values"""
-        # Basic settings validation
-        assert 0 < self.INITIAL_CAPITAL, "Invalid INITIAL_CAPITAL"
-        assert 0 < self.RISK_PER_TRADE <= 100, f"RISK_PER_TRADE must be 0-100, got {self.RISK_PER_TRADE}"
-        assert 0 < self.MAX_POSITIONS <= 100, "Invalid MAX_POSITIONS"
-        assert 0 < self.MAX_TRADES_PER_DAY <= 1000, "Invalid MAX_TRADES_PER_DAY"
-
-        # Universe validation
-        assert 0 < self.UNIVERSE_SIZE <= 10000, "Invalid UNIVERSE_SIZE"
-        assert 0 < self.MIN_PRICE < self.MAX_PRICE, "MIN_PRICE must be < MAX_PRICE"
-        assert 0 < self.MIN_DOLLAR_VOLUME, "Invalid MIN_DOLLAR_VOLUME"
-        assert 0 < self.MAX_SPREAD_BPS <= 1000, "Invalid MAX_SPREAD_BPS"
-
-        # Extreme detection validation
-        assert 0 < self.Z_THRESHOLD <= 5, f"Z_THRESHOLD must be 0-5, got {self.Z_THRESHOLD}"
-        assert 0 < self.VOLUME_ANOMALY_NORMAL, "Invalid VOLUME_ANOMALY_NORMAL"
-        assert 0 < self.VOLUME_ANOMALY_AUCTION, "Invalid VOLUME_ANOMALY_AUCTION"
-        assert 10 <= self.LOOKBACK_MINUTES <= 1440, "LOOKBACK_MINUTES must be 10-1440"
-
-        # Position sizing validation (v2+)
-        if self.version >= 2 and self.ENABLE_DYNAMIC_SIZING:
-            assert 0 < self.MIN_POSITION_SIZE <= self.MAX_POSITION_SIZE, \
-                f"MIN_POSITION_SIZE must be < MAX_POSITION_SIZE"
-            assert self.BASE_POSITION_SIZE >= self.MIN_POSITION_SIZE, \
-                "BASE_POSITION_SIZE must be >= MIN_POSITION_SIZE"
-
     def GetTimeOfDayMultiplier(self, hour, minute):
+        """
+        Get intraday risk scaling multiplier based on time of day
+
+        Args:
+            hour: Hour (0-23)
+            minute: Minute (0-59)
+
+        Returns:
+            float: Multiplier (0.5 - 1.0)
+        """
+        time_decimal = hour + minute / 60.0
+
+        if 9.5 <= time_decimal < 10.0:
+            return 0.7  # First 30 min - reduced
+        elif 10.0 <= time_decimal < 11.5:
+            return 1.0  # Morning - full size
+        elif 11.5 <= time_decimal < 13.0:
+            return 0.8  # Lunch - reduced
+        elif 13.0 <= time_decimal < 15.5:
+            return 1.0  # Afternoon - full size
+        elif 15.5 <= time_decimal <= 16.0:
+            return 0.6  # Last 30 min - reduced
+        else:
+            return 0.5  # Outside normal hours
+
+    def IsAuctionPeriod(self, time):
+        """
+        Check if current time is in auction period (first/last 30 min)
+
+        Args:
+            time: datetime object
+
+        Returns:
+            bool: True if in auction period
+        """
+        hour = time.hour
+        minute = time.minute
+
+        # First 30 minutes (9:30-10:00 AM)
+        if hour == 9 and minute >= 30:
+            return True
+        if hour == 10 and minute == 0:
+            return True
+
+        # Last 30 minutes (3:30-4:00 PM)
+        if hour == 15 and minute >= 30:
+            return True
+        if hour == 16 and minute == 0:
+            return True
+
+        return False
+
+    def GetDescription(self):
+        """Get human-readable configuration description"""
+        version_desc = f"v{self.version} ({'Basic' if self.version == 1 else 'Advanced'})"
+        mode_desc = "OBSERVATION" if self.OBSERVATION_MODE else "LIVE TRADING"
+        return f"{version_desc} - {mode_desc}"
+
+    def __repr__(self):
+        """String representation"""
+        return f"Config(version={self.version}, trading_enabled={self.trading_enabled})"
+
+    def __getitem__(self, key):
+        """Support dictionary-style access: config['KEY']"""
+        return getattr(self, key)
+
+    def __setitem__(self, key, value):
+        """Support dictionary-style assignment: config['KEY'] = value"""
+        setattr(self, key, value)
+
+    def __contains__(self, key):
+        """Support 'in' operator: 'KEY' in config"""
+        return hasattr(self, key)
+
+    def get(self, key, default=None):
+        """Support .get() method like a dictionary"""
+        return getattr(self, key, default)
+
+
+# Convenience functions for quick config creation
+def create_config(version=2, trading_enabled=False):
+    """
+    Create configuration object
+
+    Args:
+        version: 1 (basic) or 2 (advanced features)
+        trading_enabled: False (observation) or True (live trading)
+
+    Returns:
+        Config: Configuration object
+    """
+    return Config(version=version, trading_enabled=trading_enabled)
+
+
+# Pre-configured common scenarios
+def config_v1_observe():
+    """Version 1 (basic features), observation mode"""
+    return Config(version=1, trading_enabled=False)
+
+
+def config_v2_observe():
+    """Version 2 (all features), observation mode"""
+    return Config(version=2, trading_enabled=False)
+
+
+def config_v2_live():
+    """Version 2 (all features), live trading"""
+    return Config(version=2, trading_enabled=True)

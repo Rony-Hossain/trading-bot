@@ -374,7 +374,7 @@ class ExtremeAwareStrategy(QCAlgorithm):
                 should_halt = True
 
         # Check max trades
-        if self.trades_today >= self.config.MAX_TRADES_PER_DAY:
+        if self.trades_today >= self.config['MAX_TRADES_PER_DAY']:
             self.logger.info(f"Max trades reached ({self.trades_today})", component="Main")
             should_halt = True
 

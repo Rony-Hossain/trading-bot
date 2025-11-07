@@ -84,12 +84,12 @@ class ExtremeAwareStrategy(QCAlgorithm):
         self.SetBrokerageModel(BrokerageName.InteractiveBrokersBrokerage, AccountType.Margin)
 
         # ==================== LOAD CONFIGURATION ====================
-        # ⚠️ SET YOUR CONFIGURATION HERE
+        # [!] SET YOUR CONFIGURATION HERE
         # Week 1-4:  Config(version=1, trading_enabled=False)  # Learn basics
         # Week 5-8:  Config(version=2, trading_enabled=False)  # Test advanced
         # Week 9+:   Config(version=2, trading_enabled=True)   # Go live
 
-        self.config = Config(version=2, trading_enabled=False)  # ⚠️ CHANGE THIS
+        self.config = Config(version=2, trading_enabled=False)  # [!] CHANGE THIS
 
         # ==================== LOGGING SYSTEM ====================
         self.logger = StrategyLogger(self)
@@ -141,7 +141,7 @@ class ExtremeAwareStrategy(QCAlgorithm):
         # Risk Monitor
         self.risk_monitor = RiskMonitor(self)
 
-        self.logger.info("✓ Core components initialized", component="Main")
+        self.logger.info("[OK] Core components initialized", component="Main")
 
         # ==================== ADVANCED COMPONENTS (VERSION 2+) ====================
 
@@ -167,7 +167,7 @@ class ExtremeAwareStrategy(QCAlgorithm):
             # Entry Timing Protocol
             self.entry_timing = EntryTiming(self)
 
-            self.logger.info("✓ Advanced components initialized", component="Main")
+            self.logger.info("[OK] Advanced components initialized", component="Main")
         else:
             # Stub components for v1 (not used)
             self.drawdown_enforcer = None
@@ -196,6 +196,16 @@ class ExtremeAwareStrategy(QCAlgorithm):
         self.trades_today = 0
         self.trades_this_hour = 0
         self.last_hour = None
+
+        # Safety: Symbol cooldowns (prevent rapid re-entry)
+        self.symbol_cooldowns = {}  # symbol -> exit_time
+        self.COOLDOWN_MINUTES = 60  # Wait 60 min after exit before re-entry
+
+        # Event-driven detection with rate limiting
+        self.last_detection_scan = self.Time
+        self.DETECTION_INTERVAL_MINUTES = 5  # Check every 5 minutes (rate limit)
+        self.detections_this_hour = 0  # Track hourly detection rate
+        self.MAX_DETECTIONS_PER_HOUR = 12  # Max 12 detections per hour
 
         # ==================== SCHEDULING ====================
 
@@ -285,6 +295,13 @@ class ExtremeAwareStrategy(QCAlgorithm):
                     'timestamp': self.Time
                 })
 
+        # Event-driven detection (rate-limited)
+        if self._ShouldCheckForExtremes():
+            try:
+                self._ScanForExtremes()
+            except Exception as e:
+                self.logger.error(f"Detection scan error: {str(e)}", component="Main", exception=e)
+
         # v2+: Check pending entries for timing
         if self.config.version >= 2:
             self._CheckPendingEntries(data)
@@ -351,12 +368,17 @@ class ExtremeAwareStrategy(QCAlgorithm):
         import time
         start_time = time.time()
 
-        # Reset hourly counter
+        # Reset hourly counters
         self.trades_this_hour = 0
+        self.detections_this_hour = 0  # Reset detection rate limiter
         self.last_hour = self.Time.hour
 
         # Update systems
         portfolio_value = self.Portfolio.TotalPortfolioValue
+
+        # Check if HMM needs refitting (scheduled)
+        if self.hmm_regime.ShouldRefit(self.Time.date()):
+            self.hmm_regime.Fit()
 
         # v2+: Check advanced systems
         should_halt = False
@@ -374,7 +396,7 @@ class ExtremeAwareStrategy(QCAlgorithm):
                 should_halt = True
 
         # Check max trades
-        if self.trades_today >= self.config['MAX_TRADES_PER_DAY']:
+        if self.trades_today >= self.config.MAX_TRADES_PER_DAY:
             self.logger.info(f"Max trades reached ({self.trades_today})", component="Main")
             should_halt = True
 
@@ -401,8 +423,30 @@ class ExtremeAwareStrategy(QCAlgorithm):
 
     # ==================== EXTREME DETECTION ====================
 
+    def _ShouldCheckForExtremes(self):
+        """
+        Rate limit extreme detection to avoid spam
+
+        Returns:
+            bool: True if should scan for extremes now
+        """
+        # Check time elapsed since last scan
+        elapsed_minutes = (self.Time - self.last_detection_scan).total_seconds() / 60
+
+        if elapsed_minutes < self.DETECTION_INTERVAL_MINUTES:
+            return False
+
+        # Check hourly detection rate limit
+        if self.detections_this_hour >= self.MAX_DETECTIONS_PER_HOUR:
+            return False
+
+        return True
+
     def _ScanForExtremes(self):
-        """Scan all symbols for extremes"""
+        """Scan all symbols for extremes (event-driven with rate limits)"""
+
+        # Update last scan time
+        self.last_detection_scan = self.Time
 
         detections = []
 
@@ -412,11 +456,11 @@ class ExtremeAwareStrategy(QCAlgorithm):
 
             bars = self.minute_bars[symbol]
 
-            if len(bars) < self.config['LOOKBACK_MINUTES']:
+            if len(bars) < self.config.LOOKBACK_MINUTES:
                 continue
 
             # Check for continuation extreme
-            extreme = self.extreme_detector.Detect(bars)
+            extreme = self.extreme_detector.Detect(symbol, bars)
 
             if extreme and extreme['is_extreme']:
                 extreme['symbol'] = symbol
@@ -427,7 +471,7 @@ class ExtremeAwareStrategy(QCAlgorithm):
                 self.health_monitor.update_metrics('detection', None)
 
             # v2+: Check for exhaustion
-            if self.config.version >= 2 and self.config['ENABLE_EXHAUSTION']:
+            if self.config.version >= 2 and self.config.ENABLE_EXHAUSTION:
                 exhaustion = self.exhaustion_detector.Detect(symbol, bars)
 
                 if exhaustion and exhaustion['is_exhaustion']:
@@ -445,8 +489,12 @@ class ExtremeAwareStrategy(QCAlgorithm):
 
         symbol = detection['symbol']
 
+        # Increment detection counter for rate limiting
+        self.detections_this_hour += 1
+
         self.logger.info(
-            f"Extreme: {symbol} | Type: {detection['type']} | Z: {detection.get('z_score', 0):.2f}",
+            f"Extreme: {symbol} | Type: {detection['type']} | Z: {detection.get('z_score', 0):.2f} "
+            f"({self.detections_this_hour}/{self.MAX_DETECTIONS_PER_HOUR} this hour)",
             component="ExtremeDetector"
         )
 
@@ -455,7 +503,7 @@ class ExtremeAwareStrategy(QCAlgorithm):
         gpm = regime.get('gpm', 0.5)
 
         # v2+: Check cascade risk
-        if self.config.version >= 2 and self.config['ENABLE_CASCADE_PREVENTION']:
+        if self.config.version >= 2 and self.config.ENABLE_CASCADE_PREVENTION:
             can_trade, violations = self._CheckCascadeRisk(detection)
 
             if not can_trade:
@@ -468,7 +516,7 @@ class ExtremeAwareStrategy(QCAlgorithm):
         # Calculate position size
         size = self._CalculatePositionSize(detection, gpm)
 
-        if size < self.config['RISK_PER_TRADE'] * 0.5:
+        if size < self.config.RISK_PER_TRADE * 0.5:
             self.logger.info("Position size too small - skipping", component="Main")
             return
 
@@ -482,7 +530,7 @@ class ExtremeAwareStrategy(QCAlgorithm):
                 return
 
         # v2+: Add to pending entries (for timing)
-        if self.config.version >= 2 and self.config['ENABLE_ENTRY_TIMING']:
+        if self.config.version >= 2 and self.config.ENABLE_ENTRY_TIMING:
             self.pending_entries[symbol] = {
                 'detection': detection,
                 'size': size,
@@ -515,24 +563,31 @@ class ExtremeAwareStrategy(QCAlgorithm):
         )
 
     def _CalculatePositionSize(self, detection, gpm):
-        """Calculate position size with all multipliers"""
+        """Calculate position size with all multipliers (ATR-based for v2+)"""
 
-        # Get multipliers
+        # Get symbol and z-score
+        symbol = detection.get('symbol')
         z_score = abs(detection.get('z_score', 2.0))
 
-        # v2+: Use advanced sizing
-        if self.config.version >= 2 and self.config['ENABLE_DYNAMIC_SIZING']:
+        # v2+: Use advanced ATR-based sizing
+        if self.config.version >= 2 and self.config.ENABLE_DYNAMIC_SIZING:
             dd_mult = self.drawdown_enforcer.GetSizeMultiplier()
             pvs_mult = self.pvs_monitor.GetSizeMultiplier()
-            size = self.dynamic_sizer.CalculateSize(z_score, gpm, dd_mult, pvs_mult)
-        else:
-            # Phase 1: Fixed size
-            size = self.config['RISK_PER_TRADE']
+            # NEW: Pass symbol for ATR-based sizing
+            size = self.dynamic_sizer.CalculateSize(symbol, z_score, gpm, dd_mult, pvs_mult, use_atr=True)
 
-        self.logger.info(
-            f"Position size: ${size:.2f} (Z={z_score:.2f}, GPM={gpm:.2f})",
-            component="DynamicSizer" if self.config.version >= 2 else "Main"
-        )
+            self.logger.info(
+                f"Position size (ATR-based): ${size:.2f} (Z={z_score:.2f}, GPM={gpm:.2f})",
+                component="DynamicSizer"
+            )
+        else:
+            # v1: Fixed dollar size
+            size = self.config.RISK_PER_TRADE
+
+            self.logger.info(
+                f"Position size (fixed): ${size:.2f} (Z={z_score:.2f})",
+                component="Main"
+            )
 
         return size
 
@@ -541,7 +596,7 @@ class ExtremeAwareStrategy(QCAlgorithm):
     def _CheckPendingEntries(self, data):
         """Check pending entries for timing (v2+ only)"""
 
-        if self.config.version < 2 or not self.config['ENABLE_ENTRY_TIMING']:
+        if self.config.version < 2 or not self.config.ENABLE_ENTRY_TIMING:
             return
 
         to_remove = []
@@ -554,9 +609,7 @@ class ExtremeAwareStrategy(QCAlgorithm):
             detection = entry_info['detection']
 
             # Get A-VWAP if available
-            avwap_price = None
-            if symbol in self.avwap_tracker.avwap_values:
-                avwap_price = self.avwap_tracker.avwap_values[symbol]
+            avwap_price = self.avwap_tracker.GetAVWAP(symbol)
 
             # Check timing
             can_enter, reason = self.entry_timing.CheckEntryTiming(
@@ -588,6 +641,126 @@ class ExtremeAwareStrategy(QCAlgorithm):
         for symbol in to_remove:
             del self.pending_entries[symbol]
 
+    # ==================== EXECUTION GUARDS (SAFETY) ====================
+
+    def _GetCurrentSpread(self, symbol):
+        """
+        Get current bid-ask spread in basis points
+
+        Returns:
+            float: Spread in basis points, or inf if unable to calculate
+        """
+        try:
+            if symbol not in self.Securities:
+                return float('inf')
+
+            bid = self.Securities[symbol].BidPrice
+            ask = self.Securities[symbol].AskPrice
+
+            if bid <= 0 or ask <= 0:
+                return float('inf')
+
+            mid = (bid + ask) / 2
+            if mid <= 0:
+                return float('inf')
+
+            spread_bps = ((ask - bid) / mid) * 10000
+            return spread_bps
+
+        except Exception as e:
+            self.logger.error(f"Error calculating spread for {symbol}: {str(e)}",
+                            component="ExecutionGuard")
+            return float('inf')  # Conservative: assume infinite spread on error
+
+    def _IsInCooldown(self, symbol):
+        """
+        Check if symbol is in cooldown period after recent exit
+
+        Returns:
+            bool: True if symbol should not be traded yet
+        """
+        if symbol not in self.symbol_cooldowns:
+            return False
+
+        exit_time = self.symbol_cooldowns[symbol]
+        elapsed_minutes = (self.Time - exit_time).total_seconds() / 60
+
+        return elapsed_minutes < self.COOLDOWN_MINUTES
+
+    def _GetDrawdownMultiplier(self):
+        """
+        Get current drawdown multiplier (v2+ only)
+
+        Returns:
+            float: Multiplier (0.0 = halt, 1.0 = full size)
+        """
+        if self.config.version < 2 or not self.config.ENFORCE_DRAWDOWN_LADDER:
+            return 1.0
+
+        try:
+            return self.drawdown_enforcer.GetCurrentMultiplier()
+        except:
+            return 1.0  # Conservative: allow trading if check fails
+
+    def _CheckExecutionGuards(self, symbol, direction, size):
+        """
+        Final safety check before order execution
+
+        This is the last line of defense - checks all limits and guards
+        before any real trade is executed.
+
+        Args:
+            symbol: Trading symbol
+            direction: 'up' or 'down'
+            size: Position size in dollars
+
+        Returns:
+            tuple: (allowed: bool, reason: str)
+        """
+
+        # Guard 1: Daily trade limit
+        if self.trades_today >= self.config.MAX_TRADES_PER_DAY:
+            return False, f"Daily trade limit reached ({self.trades_today}/{self.config.MAX_TRADES_PER_DAY})"
+
+        # Guard 2: Drawdown ladder (v2+)
+        dd_mult = self._GetDrawdownMultiplier()
+        if dd_mult == 0:
+            return False, "Drawdown ladder halted trading (4th rung)"
+
+        # Guard 3: PVS halt level (v2+)
+        if self.config.version >= 2 and self.config.ENABLE_PVS:
+            try:
+                pvs = self.pvs_monitor.GetCurrentPVS()
+                if pvs >= self.config.PVS_HALT_LEVEL:
+                    return False, f"PVS at halt level: {pvs} >= {self.config.PVS_HALT_LEVEL}"
+            except Exception as e:
+                self.logger.error(f"PVS check failed: {str(e)}", component="ExecutionGuard")
+                # Don't halt on check failure, but log it
+
+        # Guard 4: Spread quality check
+        spread_bps = self._GetCurrentSpread(symbol)
+        if spread_bps > self.config.MAX_SPREAD_BPS:
+            return False, f"Spread too wide: {spread_bps:.1f} bps > {self.config.MAX_SPREAD_BPS} bps"
+
+        # Guard 5: Position limit
+        if len(self.Portfolio) >= self.config.MAX_POSITIONS:
+            return False, f"Max positions reached ({len(self.Portfolio)}/{self.config.MAX_POSITIONS})"
+
+        # Guard 6: Symbol cooldown (prevent rapid re-entry)
+        if self._IsInCooldown(symbol):
+            elapsed = (self.Time - self.symbol_cooldowns[symbol]).total_seconds() / 60
+            remaining = self.COOLDOWN_MINUTES - elapsed
+            return False, f"Symbol in cooldown: {remaining:.0f} min remaining"
+
+        # Guard 7: Position size validation
+        if size < self.config.RISK_PER_TRADE * 0.5:
+            return False, f"Position too small: ${size:.2f} < ${self.config.RISK_PER_TRADE * 0.5:.2f}"
+
+        # All guards passed
+        return True, "OK"
+
+    # ==================== POSITION MANAGEMENT ====================
+
     def _EnterPosition(self, symbol, detection, size, gpm):
         """Enter a position"""
 
@@ -615,10 +788,19 @@ class ExtremeAwareStrategy(QCAlgorithm):
             shares = -shares
 
         # Check if observation mode
-        if self.config['OBSERVATION_MODE']:
+        if self.config.OBSERVATION_MODE:
             self.logger.info(
-                f"💡 OBSERVATION MODE - Would enter: {shares:+d} {symbol} @ ${price:.2f}",
+                f"[OBS] OBSERVATION MODE - Would enter: {shares:+d} {symbol} @ ${price:.2f}",
                 component="Main"
+            )
+            return
+
+        # CRITICAL: Final execution guards (last line of defense)
+        allowed, reason = self._CheckExecutionGuards(symbol, direction, size)
+        if not allowed:
+            self.logger.warning(
+                f"[BLOCKED] TRADE BLOCKED: {symbol} - {reason}",
+                component="ExecutionGuard"
             )
             return
 
@@ -630,7 +812,7 @@ class ExtremeAwareStrategy(QCAlgorithm):
                 fill_price = ticket.AverageFillPrice
 
                 self.logger.info(
-                    f"✓ ENTRY: {shares:+d} {symbol} @ ${fill_price:.2f} (${size:.2f})",
+                    f"[ENTRY] {shares:+d} {symbol} @ ${fill_price:.2f} (${size:.2f})",
                     component="Trade"
                 )
 
@@ -752,9 +934,9 @@ class ExtremeAwareStrategy(QCAlgorithm):
         pnl_pct = pnl / (entry_price * abs(shares))
 
         # Check if observation mode
-        if self.config['OBSERVATION_MODE']:
+        if self.config.OBSERVATION_MODE:
             self.logger.info(
-                f"💡 OBSERVATION MODE - Would exit: {-shares:+d} {symbol} @ ${current_price:.2f} | "
+                f"[OBS] OBSERVATION MODE - Would exit: {-shares:+d} {symbol} @ ${current_price:.2f} | "
                 f"P&L: ${pnl:+.2f} ({pnl_pct:+.2%}) | Reason: {reason}",
                 component="Main"
             )
@@ -777,7 +959,7 @@ class ExtremeAwareStrategy(QCAlgorithm):
                 actual_pnl_pct = actual_pnl / (entry_price * abs(shares))
 
                 self.logger.info(
-                    f"✓ EXIT: {-shares:+d} {symbol} @ ${exit_price:.2f} | "
+                    f"[EXIT] {-shares:+d} {symbol} @ ${exit_price:.2f} | "
                     f"P&L: ${actual_pnl:+.2f} ({actual_pnl_pct:+.2%}) | {reason}",
                     component="Trade"
                 )
@@ -801,6 +983,13 @@ class ExtremeAwareStrategy(QCAlgorithm):
 
                 # Remove from active
                 del self.active_positions[symbol]
+
+                # Track exit time for cooldown period
+                self.symbol_cooldowns[symbol] = self.Time
+                self.logger.info(
+                    f"Cooldown started for {symbol}: {self.COOLDOWN_MINUTES} min",
+                    component="ExecutionGuard"
+                )
 
             else:
                 self.logger.error(f"Exit order not filled: {ticket.Status}", component="Trade")
@@ -844,7 +1033,7 @@ class ExtremeAwareStrategy(QCAlgorithm):
 
             self.logger.info("", component="Report")
             self.logger.info("SYSTEM HEALTH:", component="Report")
-            self.logger.info(f"  Status: {'✓ HEALTHY' if health['overall_healthy'] else '✗ ISSUES'}", component="Report")
+            self.logger.info(f"  Status: {'[HEALTHY]' if health['overall_healthy'] else '[ISSUES]'}", component="Report")
             self.logger.info(f"  Checks Passed: {health['checks_passed']}/{health['checks_total']}", component="Report")
 
         if self.trades_today > 0:
@@ -873,7 +1062,7 @@ class ExtremeAwareStrategy(QCAlgorithm):
 
         # Log final stats
         final_value = self.Portfolio.TotalPortfolioValue
-        total_return = (final_value / self.config['INITIAL_CAPITAL'] - 1) * 100
+        total_return = (final_value / self.config.INITIAL_CAPITAL - 1) * 100
 
         self.logger.info(f"Final Portfolio Value: ${final_value:,.2f}", component="Main")
         self.logger.info(f"Total Return: {total_return:+.2f}%", component="Main")

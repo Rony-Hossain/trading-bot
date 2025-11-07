@@ -84,14 +84,95 @@ class HealthMonitor:
         # Recovery tracking
         self.recovery_attempts = defaultdict(int)
         self.last_recovery_time = {}
-        
+        self.recovery_failures = defaultdict(int)  # Track consecutive failures
+        self.circuit_breaker_open = {}  # recovery_key -> open_time
+
+        # Recovery configuration
+        self.MAX_RECOVERY_ATTEMPTS = 5  # Max attempts before circuit opens
+        self.CIRCUIT_BREAKER_DURATION = 3600  # 1 hour in seconds
+        self.BASE_BACKOFF_SECONDS = 60  # Initial backoff: 1 minute
+
         # Start time
         self.start_time = algorithm.Time
         self.last_hourly_check = algorithm.Time
         
         if self.logger:
             self.logger.info("HealthMonitor initialized", component="HealthMonitor")
-    
+
+    def _is_circuit_breaker_open(self, recovery_key):
+        """Check if circuit breaker is open for this recovery type"""
+        if recovery_key not in self.circuit_breaker_open:
+            return False
+
+        open_time = self.circuit_breaker_open[recovery_key]
+        elapsed = (self.algorithm.Time - open_time).total_seconds()
+
+        # Close circuit after duration
+        if elapsed >= self.CIRCUIT_BREAKER_DURATION:
+            del self.circuit_breaker_open[recovery_key]
+            self.recovery_failures[recovery_key] = 0  # Reset failure count
+            if self.logger:
+                self.logger.info(
+                    f"Circuit breaker CLOSED for {recovery_key} after {elapsed/60:.0f} min",
+                    component="HealthMonitor"
+                )
+            return False
+
+        return True
+
+    def _get_backoff_time(self, recovery_key):
+        """
+        Calculate exponential backoff time with jitter
+
+        Formula: min(base * 2^failures, max) + random_jitter
+        """
+        import random
+
+        failures = self.recovery_failures[recovery_key]
+
+        # Exponential backoff: 60s, 120s, 240s, 480s, 960s
+        backoff = min(self.BASE_BACKOFF_SECONDS * (2 ** failures), 960)
+
+        # Add jitter (0-30% of backoff)
+        jitter = random.uniform(0, backoff * 0.3)
+
+        return backoff + jitter
+
+    def _should_attempt_recovery(self, recovery_key):
+        """
+        Check if recovery should be attempted based on backoff and circuit breaker
+
+        Returns:
+            tuple: (should_attempt: bool, reason: str)
+        """
+        # Check circuit breaker
+        if self._is_circuit_breaker_open(recovery_key):
+            elapsed = (self.algorithm.Time - self.circuit_breaker_open[recovery_key]).total_seconds()
+            remaining = (self.CIRCUIT_BREAKER_DURATION - elapsed) / 60
+            return False, f"Circuit breaker OPEN: {remaining:.0f} min remaining"
+
+        # Check if too many recent failures
+        if self.recovery_failures[recovery_key] >= self.MAX_RECOVERY_ATTEMPTS:
+            # Open circuit breaker
+            self.circuit_breaker_open[recovery_key] = self.algorithm.Time
+            if self.logger:
+                self.logger.warning(
+                    f"Circuit breaker OPENED for {recovery_key} after {self.MAX_RECOVERY_ATTEMPTS} failures",
+                    component="HealthMonitor"
+                )
+            return False, "Too many failures - circuit breaker opened"
+
+        # Check backoff time
+        if recovery_key in self.last_recovery_time:
+            elapsed = (self.algorithm.Time - self.last_recovery_time[recovery_key]).total_seconds()
+            required_backoff = self._get_backoff_time(recovery_key)
+
+            if elapsed < required_backoff:
+                remaining = (required_backoff - elapsed) / 60
+                return False, f"Backoff: {remaining:.1f} min remaining"
+
+        return True, "OK"
+
     def run_health_check(self, force=False):
         """
         Run all health checks
@@ -372,37 +453,47 @@ class HealthMonitor:
                 self._recover_error_spike()
     
     def _recover_data_feed(self):
-        """Attempt to recover data feed"""
-        
+        """Attempt to recover data feed with exponential backoff and circuit breaker"""
+
         recovery_key = 'data_feed'
-        
-        # Rate limit recovery attempts (max 1 per 5 minutes)
-        if recovery_key in self.last_recovery_time:
-            time_since = (self.algorithm.Time - self.last_recovery_time[recovery_key]).total_seconds()
-            if time_since < 300:
-                return
-        
+
+        # Check if recovery should be attempted
+        should_attempt, reason = self._should_attempt_recovery(recovery_key)
+        if not should_attempt:
+            if self.logger:
+                self.logger.info(f"Skipping data feed recovery: {reason}", component="HealthMonitor")
+            return
+
         if self.logger:
-            self.logger.info("Attempting data feed recovery", component="HealthMonitor")
-        
+            attempts = self.recovery_attempts[recovery_key]
+            failures = self.recovery_failures[recovery_key]
+            self.logger.info(
+                f"Attempting data feed recovery (attempt {attempts+1}, failures: {failures})",
+                component="HealthMonitor"
+            )
+
         try:
             # Clear stale data
             if hasattr(self.algorithm, 'minute_bars'):
                 for symbol in list(self.algorithm.minute_bars.keys()):
                     if len(self.algorithm.minute_bars[symbol]) > 1440:  # Keep last 24 hours
                         self.algorithm.minute_bars[symbol] = self.algorithm.minute_bars[symbol][-1440:]
-            
+
             # Log recovery attempt
             self.recovery_attempts[recovery_key] += 1
             self.last_recovery_time[recovery_key] = self.algorithm.Time
-            
+            self.recovery_failures[recovery_key] = 0  # Reset on success
+
             if self.logger:
-                self.logger.info("Data feed recovery completed", component="HealthMonitor")
-                
+                self.logger.info("[OK] Data feed recovery completed", component="HealthMonitor")
+
         except Exception as e:
+            self.recovery_failures[recovery_key] += 1
             if self.logger:
-                self.logger.error(f"Data feed recovery failed: {str(e)}", 
-                                component="HealthMonitor", exception=e)
+                self.logger.error(
+                    f"[FAILED] Data feed recovery failed (failure {self.recovery_failures[recovery_key]}): {str(e)}",
+                    component="HealthMonitor", exception=e
+                )
     
     def _recover_universe(self):
         """Attempt to recover universe"""

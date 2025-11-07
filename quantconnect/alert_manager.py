@@ -25,18 +25,42 @@ from AlgorithmImports import *
 import json
 from datetime import datetime, timedelta
 from collections import defaultdict, deque
+import yaml
+import os
 
 class AlertManager:
     """
     Multi-channel alert system for trading strategy
     """
-    
+
     def __init__(self, algorithm, alert_config=None):
         self.algorithm = algorithm
         self.logger = algorithm.logger if hasattr(algorithm, 'logger') else None
-        
-        # Alert configuration
-        self.config = alert_config or self._default_config()
+
+        # Load scanner.yaml config if available
+        scanner_config = self._load_scanner_yaml()
+
+        # Alert configuration (scanner.yaml takes precedence)
+        self.config = alert_config or scanner_config or self._default_config()
+
+        # Extract scanner.yaml settings if present
+        if scanner_config:
+            self.mode = scanner_config.get('alerts', {}).get('mode', 'PROMPT_FIRST')
+            self.rate_limit_per_hour = scanner_config.get('alerts', {}).get('rate_limit_per_hour', 12)
+            self.min_confidence = scanner_config.get('alerts', {}).get('min_confidence', 0.7)
+            self.min_signal_score = scanner_config.get('scoring', {}).get('min_signal_score', 2.0)
+
+            if self.logger:
+                self.logger.info(
+                    f"AlertManager loaded scanner.yaml: mode={self.mode}, "
+                    f"rate_limit={self.rate_limit_per_hour}/hr, min_score={self.min_signal_score}",
+                    component="AlertManager"
+                )
+        else:
+            self.mode = 'LOG_ONLY'
+            self.rate_limit_per_hour = 12
+            self.min_confidence = 0.7
+            self.min_signal_score = 2.0
         
         # Alert channels
         self.channels = {
@@ -71,7 +95,38 @@ class AlertManager:
         
         if self.logger:
             self.logger.info("AlertManager initialized", component="AlertManager")
-    
+
+    def _load_scanner_yaml(self):
+        """
+        Load scanner.yaml configuration file
+
+        Returns:
+            dict: Parsed YAML config, or None if not found
+        """
+        # Try multiple possible paths
+        possible_paths = [
+            './config/scanner.yaml',
+            '../config/scanner.yaml',
+            'scanner.yaml',
+            './scanner.yaml'
+        ]
+
+        for path in possible_paths:
+            if os.path.exists(path):
+                try:
+                    with open(path, 'r') as f:
+                        config = yaml.safe_load(f)
+                    if self.logger:
+                        self.logger.info(f"Loaded scanner config from: {path}", component="AlertManager")
+                    return config
+                except Exception as e:
+                    if self.logger:
+                        self.logger.error(f"Failed to load {path}: {str(e)}", component="AlertManager")
+                    return None
+
+        # scanner.yaml not found - this is okay, use defaults
+        return None
+
     def _default_config(self):
         """Default alert configuration"""
         return {

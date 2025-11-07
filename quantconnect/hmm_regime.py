@@ -41,9 +41,14 @@ class HMMRegime:
         self.is_fitted = False
         self.last_fit_date = None
         self.days_since_fit = 0
-        
+        self.next_scheduled_fit = None  # Next scheduled fit date
+
         # For Phase 1 - simplified regime detection
         self.use_simplified = True  # Use heuristics instead of full HMM
+
+        # Fit scheduling
+        self.fit_on_warmup_end = True  # Fit when warmup completes
+        self.refit_interval_days = self.config.HMM_REFIT_DAYS  # 20 days default
         
         # Subscribe to VIX for regime detection
         try:
@@ -180,24 +185,84 @@ class HMMRegime:
         return features
     
     def ShouldRefit(self, current_date):
-        """Check if we should refit the HMM"""
-        if not self.is_fitted:
+        """
+        Check if we should refit the HMM based on schedule
+
+        Args:
+            current_date: Current date
+
+        Returns:
+            bool: True if refit is due
+        """
+        # First fit (on warmup end)
+        if not self.is_fitted and self.fit_on_warmup_end:
             return True
-        
-        if self.last_fit_date is None:
+
+        # No scheduled refit date set yet
+        if self.next_scheduled_fit is None:
+            return False
+
+        # Check if we've reached scheduled refit date
+        if current_date >= self.next_scheduled_fit:
             return True
-        
-        days_since = (current_date - self.last_fit_date).days
-        return days_since >= self.config.HMM_REFIT_DAYS
-    
-    def Fit(self):
-        """Fit the HMM model (for future implementation)"""
-        # TODO: Implement full Gaussian HMM fitting
-        # For Phase 1, we use simplified heuristics
+
+        return False
+
+    def Fit(self, force=False):
+        """
+        Fit the HMM model with scheduling
+
+        Args:
+            force: Force fit regardless of schedule
+
+        Returns:
+            bool: True if fit was performed
+        """
+        current_date = self.algorithm.Time.date()
+
+        # Check if fit should be performed
+        if not force and not self.ShouldRefit(current_date):
+            return False
+
+        # For Phase 1: Use simplified heuristics (no actual fitting)
         self.is_fitted = True
-        self.last_fit_date = self.algorithm.Time.date()
-        self.algorithm.Log("HMM: Using simplified regime detection (Phase 1)")
-    
+        self.last_fit_date = current_date
+
+        # Schedule next refit
+        from datetime import timedelta
+        self.next_scheduled_fit = current_date + timedelta(days=self.refit_interval_days)
+
+        self.algorithm.Log(
+            f"HMM: Fitted on {current_date.strftime('%Y-%m-%d')}, "
+            f"next refit scheduled for {self.next_scheduled_fit.strftime('%Y-%m-%d')}"
+        )
+
+        return True
+
+    def OnWarmupEnd(self):
+        """
+        Called when algorithm warmup ends - perform initial fit
+
+        This should be called from main algorithm's OnWarmupEnd
+        """
+        if self.fit_on_warmup_end and not self.is_fitted:
+            self.Fit(force=True)
+            self.algorithm.Log("HMM: Initial fit completed after warmup")
+
+    def GetCurrentRegime(self):
+        """
+        Get current regime state (convenience wrapper)
+
+        Returns:
+            dict: Current regime information with keys:
+                - dominant_state: str ('Low-Vol', 'High-Vol', or 'Trending')
+                - state_probs: dict of state probabilities
+                - gpm: float (Global Position Multiplier, 0.3-1.0)
+                - requires_2x_edge: bool (if high-vol regime)
+                - correlation_breakdown: float (0.0-1.0)
+        """
+        return self.Update(self.algorithm.Time)
+
     def GetGlobalPositionMultiplier(self):
         """
         Get the current Global Position Multiplier (GPM)

@@ -1,0 +1,70 @@
+# Extreme Scanner Configuration
+# Centralized configuration for scanning, scoring, and alerting
+
+# Alert Configuration
+alerts:
+  mode: "PROMPT_FIRST"  # PROMPT_FIRST, AUTO_EXECUTE, or LOG_ONLY
+  rate_limit_per_hour: 12  # Max alerts per hour
+  min_confidence: 0.7  # Minimum confidence to alert (0-1)
+
+# Scoring Configuration
+scoring:
+  min_signal_score: 2.0  # Minimum Z-score to consider (|Z| >= 2.0)
+
+  # Weighted scoring components
+  weights:
+    z_score: 0.40  # 40% - Signal strength
+    volume_anomaly: 0.20  # 20% - Volume confirmation
+    regime_confidence: 0.15  # 15% - Regime certainty
+    options_tell: 0.10  # 10% - Options flow (future)
+    sector_breadth: 0.10  # 10% - Sector context (future)
+    timing: 0.05  # 5% - Intraday timing
+
+  # Multipliers
+  regime_multipliers:
+    "Low-Vol": 1.0  # Normal sizing in low-vol
+    "High-Vol": 0.3  # Reduced sizing in high-vol
+    "Trending": 0.8  # Moderate sizing in trending
+
+# Detection Configuration
+detection:
+  scan_interval_minutes: 5  # How often to scan
+  max_detections_per_hour: 12  # Rate limit
+  lookback_minutes: 60  # Z-score lookback period
+
+  # Thresholds
+  z_threshold: 2.0  # Minimum |Z| for detection
+  volume_anomaly_normal: 1.5  # Volume multiplier (normal hours)
+  volume_anomaly_auction: 2.0  # Volume multiplier (auction periods)
+
+# Risk Management
+risk:
+  base_position_size: 5.00  # Base size in dollars
+  min_position_size: 2.50  # Minimum size
+  max_position_size: 20.00  # Maximum size
+  max_trades_per_day: 2  # Daily trade limit
+  max_positions: 1  # Concurrent position limit
+  cooldown_minutes: 60  # Cooldown after exit
+
+# Spread Guards
+spread:
+  max_spread_bps: 35  # Maximum acceptable spread
+  hard_skip_bps: 40  # Never trade above this
+  normal_bps: 30  # Normal max
+  high_vol_bps: 20  # High-vol regime max
+
+# Execution Guards (all must pass)
+execution_guards:
+  check_daily_limit: true
+  check_drawdown: true
+  check_pvs: true
+  check_spread: true
+  check_position_limit: true
+  check_cooldown: true
+  check_min_size: true
+
+# Monitoring
+monitoring:
+  health_check_interval_hours: 1
+  log_level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  verbose_detections: true
