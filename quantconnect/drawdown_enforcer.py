@@ -4,10 +4,10 @@ Drawdown Enforcer - Phase 2
 Enforces the drawdown ladder by actually reducing position sizes during drawdowns.
 
 Drawdown Ladder:
-- 10% DD → 0.75x size
-- 20% DD → 0.50x size
-- 30% DD → 0.25x size
-- 40% DD → 0.00x (HALT all trading)
+- 10% DD -> 0.75x size
+- 20% DD -> 0.50x size
+- 30% DD -> 0.25x size
+- 40% DD -> 0.00x (HALT all trading)
 
 Usage:
     from drawdown_enforcer import DrawdownEnforcer
@@ -214,7 +214,7 @@ class DrawdownEnforcer:
             level = 'warning'
         
         # Create message
-        message = f"Drawdown Ladder: Rung {new_rung} activated - DD {abs_dd:.2%} → Size {multiplier:.2f}x"
+        message = f"Drawdown Ladder: Rung {new_rung} activated - DD {abs_dd:.2%} -> Size {multiplier:.2f}x"
         
         if self.logger:
             if level == 'critical':

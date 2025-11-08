@@ -92,12 +92,60 @@ class HealthMonitor:
         self.CIRCUIT_BREAKER_DURATION = 3600  # 1 hour in seconds
         self.BASE_BACKOFF_SECONDS = 60  # Initial backoff: 1 minute
 
-        # Start time
+        # Start time and warmup tracking
         self.start_time = algorithm.Time
         self.last_hourly_check = algorithm.Time
-        
+        self.warmup_duration_minutes = 5  # First 5 minutes = warmup
+        self.warmup_status_emitted = False  # One-time warmup message flag
+        self.warmup_end_emitted = False  # One-time warmup complete message flag
+
         if self.logger:
             self.logger.info("HealthMonitor initialized", component="HealthMonitor")
+
+    def is_in_warmup(self):
+        """Check if algorithm is still in warmup period"""
+        elapsed_minutes = (self.algorithm.Time - self.start_time).total_seconds() / 60
+        return elapsed_minutes < self.warmup_duration_minutes
+
+    def get_warmup_status(self):
+        """
+        Get warmup status with time remaining
+
+        Returns:
+            dict: {in_warmup: bool, elapsed_minutes: float, remaining_minutes: float}
+        """
+        elapsed_minutes = (self.algorithm.Time - self.start_time).total_seconds() / 60
+        in_warmup = elapsed_minutes < self.warmup_duration_minutes
+        remaining_minutes = max(0, self.warmup_duration_minutes - elapsed_minutes)
+
+        return {
+            'in_warmup': in_warmup,
+            'elapsed_minutes': elapsed_minutes,
+            'remaining_minutes': remaining_minutes,
+            'warmup_duration': self.warmup_duration_minutes
+        }
+
+    def _emit_warmup_status(self):
+        """Emit one-time warmup status message"""
+        if not self.warmup_status_emitted and self.is_in_warmup():
+            warmup_status = self.get_warmup_status()
+            if self.logger:
+                self.logger.info(
+                    f"[WARMUP] System in warmup period ({self.warmup_duration_minutes} min). "
+                    f"Health checks relaxed. Remaining: {warmup_status['remaining_minutes']:.1f} min",
+                    component="HealthMonitor"
+                )
+            self.warmup_status_emitted = True
+
+    def _emit_warmup_complete(self):
+        """Emit one-time warmup complete message"""
+        if not self.warmup_end_emitted and not self.is_in_warmup():
+            if self.logger:
+                self.logger.info(
+                    "[WARMUP COMPLETE] System warmup period ended. Full health checks now active.",
+                    component="HealthMonitor"
+                )
+            self.warmup_end_emitted = True
 
     def _is_circuit_breaker_open(self, recovery_key):
         """Check if circuit breaker is open for this recovery type"""
@@ -176,23 +224,30 @@ class HealthMonitor:
     def run_health_check(self, force=False):
         """
         Run all health checks
-        
+
         Args:
             force: Force check even if recently checked
-        
+
         Returns:
             dict with health status
         """
-        
+
+        # Emit warmup status messages (one-time)
+        self._emit_warmup_status()
+        self._emit_warmup_complete()
+
+        # Check if in warmup period
+        in_warmup = self.is_in_warmup()
+
         # Only run once per hour unless forced
         if not force:
             time_since_check = (self.algorithm.Time - self.last_hourly_check).total_seconds() / 60
             if time_since_check < 60:  # Less than 1 hour
                 return self.health_status
-        
+
         self.last_hourly_check = self.algorithm.Time
-        
-        # Run each enabled check
+
+        # Run each enabled check (relaxed during warmup)
         checks = {}
         issues = []
         
@@ -396,7 +451,7 @@ class HealthMonitor:
             old_avg = sum(list(self.execution_times)[:10]) / 10
             
             if recent_avg > old_avg * 2:
-                return False, f"Execution slowing: {old_avg:.2f}s → {recent_avg:.2f}s"
+                return False, f"Execution slowing: {old_avg:.2f}s -> {recent_avg:.2f}s"
         
         return True, None
     

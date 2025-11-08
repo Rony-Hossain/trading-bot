@@ -205,7 +205,7 @@ class StrategyLogger:
             'state_probs': regime_data.get('state_probs', {})
         }
         
-        msg = f"🔄 REGIME: {old_regime} → {new_regime} (GPM: {regime_data.get('gpm', 1.0):.2f})"
+        msg = f"[REGIME] {old_regime} -> {new_regime} (GPM: {regime_data.get('gpm', 1.0):.2f})"
         
         self.info(msg, component='HMMRegime', extra_data=log_entry)
     

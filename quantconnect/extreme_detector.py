@@ -3,8 +3,8 @@ Extreme Detection - Core Signal Generator
 Detects when a stock has an extreme 60-minute move with participation
 
 Criteria:
-1. |Z₆₀| ≥ 2 (60-min return z-score)
-2. Volume anomaly ≥ 1.5x (2x during auction periods)
+1. |Z_60| >= 2 (60-min return z-score)
+2. Volume anomaly >= 1.5x (2x during auction periods)
 3. Spread checks pass
 """
 

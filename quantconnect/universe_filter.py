@@ -4,7 +4,7 @@ Criteria:
 - NYSE/NASDAQ common shares
 - Price: $5-$350
 - Liquidity: top 1000 by 60-day median dollar volume
-- Spread quality: median spread ≤ 35 bps
+- Spread quality: median spread <= 35 bps
 - Exclude blacklisted tickers
 """
 

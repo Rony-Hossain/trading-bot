@@ -1,11 +1,11 @@
 """
 Cascade Prevention - Phase 2
 
-Prevents cascade of bad decisions by blocking trades when ≥2 violations occur.
+Prevents cascade of bad decisions by blocking trades when >=2 violations occur.
 
 Violations:
 - Weak signal (low edge)
-- Loss streak (≥2 consecutive)
+- Loss streak (>=2 consecutive)
 - High PVS (>7)
 - Rule violation today
 - Fatigue (>3 trades/hour)
@@ -75,7 +75,7 @@ class CascadePrevention:
         if regime_confidence < self.min_regime_confidence:
             violations.append('regime_uncertainty')
         
-        # Block if ≥2 violations
+        # Block if >=2 violations
         can_trade = len(violations) < self.cascade_threshold
         
         if not can_trade and self.logger:

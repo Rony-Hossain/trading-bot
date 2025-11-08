@@ -80,7 +80,7 @@ class Config:
         self.BLACKLIST = ['BRK.A', 'BRK.B']
 
         # ==================== EXTREME DETECTION ====================
-        self.Z_THRESHOLD = 2.0  # |Z₆₀| ≥ 2.0 for detection
+        self.Z_THRESHOLD = 2.0  # |Z_60| >= 2.0 for detection
         self.VOLUME_ANOMALY_NORMAL = 1.5  # 1.5x median volume
         self.VOLUME_ANOMALY_AUCTION = 2.0  # 2x for auction periods
         self.LOOKBACK_MINUTES = 60  # Lookback window for Z-score
@@ -117,8 +117,8 @@ class Config:
 
         # ==================== PVS (PSYCHOLOGICAL VOLATILITY SCORE) ====================
         self.ENABLE_PVS = (version >= 2)
-        self.PVS_WARNING_LEVEL = 7  # Reduce size at PVS ≥ 7
-        self.PVS_HALT_LEVEL = 9     # Halt trading at PVS ≥ 9
+        self.PVS_WARNING_LEVEL = 7  # Reduce size at PVS >= 7
+        self.PVS_HALT_LEVEL = 9     # Halt trading at PVS >= 9
         self.PVS_SMALL_CAPITAL_MULT = 1.5  # Extra sensitivity for small accounts
         self.SMALL_CAPITAL_THRESHOLD = 5000  # What counts as "small"
 
@@ -126,7 +126,7 @@ class Config:
         self.ENABLE_CASCADE_PREVENTION = (version >= 2)
         self.CASCADE_PREVENTION = {
             'MIN_EDGE_THRESHOLD': 2.0,      # Minimum |Z-score| for strong signal
-            'CASCADE_THRESHOLD': 2,         # Block if ≥2 violations
+            'CASCADE_THRESHOLD': 2,         # Block if >=2 violations
             'MAX_CONSECUTIVE_LOSSES': 2,    # Max losses before violation
             'PVS_THRESHOLD': 7,             # PVS threshold for violation
             'MAX_TRADES_PER_HOUR': 3,       # Max hourly trades (fatigue)

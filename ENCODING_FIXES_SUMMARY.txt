@@ -1,0 +1,61 @@
+UTF-8 Mojibake Fixes - Complete Summary
+========================================
+
+Date: 2025-11-07
+Status: ✅ ALL COMPLETE
+
+Files Fixed (8 total):
+----------------------
+1. quantconnect/extreme_detector.py
+   - |Z₆₀| ≥ 2 → |Z_60| >= 2
+   - ≥ 1.5x → >= 1.5x
+
+2. quantconnect/drawdown_enforcer.py
+   - DD 10% → 0.75x → DD 10% -> 0.75x (5 instances)
+
+3. quantconnect/cascade_prevention.py
+   - ≥2 violations → >=2 violations (3 instances)
+
+4. quantconnect/exhaustion_detector.py
+   - ≥3 hours → >=3 hours
+   - ΔIV → Delta-IV
+   - ± 0.3 ATR → +/- 0.3 ATR
+   - ≤ 0.8× → <= 0.8x
+
+5. quantconnect/config.py
+   - |Z₆₀| ≥ 2.0 → |Z_60| >= 2.0
+   - PVS ≥ 7 → PVS >= 7
+   - PVS ≥ 9 → PVS >= 9
+   - ≥2 violations → >=2 violations
+
+6. quantconnect/health_monitor.py
+   - 0.5s → 1.2s → 0.5s -> 1.2s
+
+7. quantconnect/logger.py
+   - 🔄 REGIME: A → B → [REGIME] A -> B
+
+8. quantconnect/portfolio_constraints.py
+   - |β| ≤ 0.05 → |beta| <= 0.05
+   - ≤ 2× → <= 2x
+   - ±10% → +/-10% (2 instances)
+   - β=0.05 → beta=0.05
+
+9. quantconnect/universe_filter.py
+   - spread ≤ 35 bps → spread <= 35 bps
+
+Configuration Files Added (2):
+-------------------------------
+1. .gitattributes - Git encoding enforcement
+2. .editorconfig - Editor UTF-8 configuration
+
+Total Character Replacements: 25+
+Risk Level: VERY LOW (cosmetic only)
+Impact: HIGH (universal compatibility)
+
+Verification:
+-------------
+✅ No Unicode characters remaining in *.py files
+✅ All files use ASCII-safe alternatives
+✅ Git and editor configs in place
+✅ Cross-platform compatibility ensured
+

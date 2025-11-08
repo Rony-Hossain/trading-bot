@@ -134,13 +134,30 @@ class LogRetriever:
     def analyze_logs(self, logs):
         """
         Generate analysis report from logs
-        
+
         Args:
             logs: Log data dictionary
+
+        Returns:
+            dict: Analysis results with keys:
+                - overall_stats: Session summary statistics
+                - error_analysis: Error counts by component
+                - trade_analysis: Trade statistics
+                - detection_analysis: Extreme detection statistics
+                - performance_trend: Portfolio performance metrics
         """
         if not logs:
             print("No logs to analyze")
-            return
+            return None
+
+        # Initialize analysis result
+        analysis = {
+            'overall_stats': {},
+            'error_analysis': {},
+            'trade_analysis': {},
+            'detection_analysis': {},
+            'performance_trend': {}
+        }
         
         print("\n" + "="*60)
         print("LOG ANALYSIS REPORT")
@@ -149,22 +166,35 @@ class LogRetriever:
         # Overall stats
         if 'summary' in logs:
             summary = logs['summary']
+            analysis['overall_stats'] = {
+                'session_id': logs.get('session_id', 'N/A'),
+                'total_logs': summary.get('total_logs', 0),
+                'total_errors': summary.get('total_errors', 0),
+                'total_trades': summary.get('total_trades', 0),
+                'total_detections': summary.get('total_detections', 0)
+            }
+
             print("Overall Stats:")
-            print(f"  Session ID: {logs.get('session_id', 'N/A')}")
-            print(f"  Total Logs: {summary.get('total_logs', 0)}")
-            print(f"  Total Errors: {summary.get('total_errors', 0)}")
-            print(f"  Total Trades: {summary.get('total_trades', 0)}")
-            print(f"  Total Detections: {summary.get('total_detections', 0)}")
+            print(f"  Session ID: {analysis['overall_stats']['session_id']}")
+            print(f"  Total Logs: {analysis['overall_stats']['total_logs']}")
+            print(f"  Total Errors: {analysis['overall_stats']['total_errors']}")
+            print(f"  Total Trades: {analysis['overall_stats']['total_trades']}")
+            print(f"  Total Detections: {analysis['overall_stats']['total_detections']}")
             print()
         
         # Error analysis
         if 'errors' in logs and logs['errors']:
-            print("Error Analysis:")
             error_types = {}
             for error in logs['errors']:
                 component = error.get('component', 'unknown')
                 error_types[component] = error_types.get(component, 0) + 1
-            
+
+            analysis['error_analysis'] = {
+                'by_component': error_types,
+                'total_errors': len(logs['errors'])
+            }
+
+            print("Error Analysis:")
             for component, count in sorted(error_types.items(), key=lambda x: x[1], reverse=True):
                 print(f"  {component}: {count} errors")
             print()
@@ -172,39 +202,52 @@ class LogRetriever:
         # Trade analysis
         if 'trades' in logs and logs['trades']:
             trades = logs['trades']
-            print("Trade Analysis:")
-            print(f"  Total Trades: {len(trades)}")
-            
             entry_count = sum(1 for t in trades if t['trade_type'] == 'entry')
             exit_count = sum(1 for t in trades if t['trade_type'] == 'exit')
-            
-            print(f"  Entries: {entry_count}")
-            print(f"  Exits: {exit_count}")
-            
+
             # Most traded symbols
             symbols = {}
             for trade in trades:
                 sym = trade['symbol']
                 symbols[sym] = symbols.get(sym, 0) + 1
-            
-            print(f"  Most traded: {sorted(symbols.items(), key=lambda x: x[1], reverse=True)[:5]}")
+
+            most_traded = sorted(symbols.items(), key=lambda x: x[1], reverse=True)[:5]
+
+            analysis['trade_analysis'] = {
+                'total_trades': len(trades),
+                'entries': entry_count,
+                'exits': exit_count,
+                'most_traded': most_traded
+            }
+
+            print("Trade Analysis:")
+            print(f"  Total Trades: {len(trades)}")
+            print(f"  Entries: {entry_count}")
+            print(f"  Exits: {exit_count}")
+            print(f"  Most traded: {most_traded}")
             print()
         
         # Detection analysis
         if 'detections' in logs and logs['detections']:
             detections = logs['detections']
-            print("Detection Analysis:")
-            print(f"  Total Extremes: {len(detections)}")
-            
             up = sum(1 for d in detections if d['direction'] == 'up')
             down = sum(1 for d in detections if d['direction'] == 'down')
-            
-            print(f"  Up: {up}")
-            print(f"  Down: {down}")
-            
+
             avg_z = sum(abs(d['z_score']) for d in detections) / len(detections)
             avg_vol = sum(d['vol_anomaly'] for d in detections) / len(detections)
-            
+
+            analysis['detection_analysis'] = {
+                'total_extremes': len(detections),
+                'up': up,
+                'down': down,
+                'avg_abs_z_score': avg_z,
+                'avg_vol_anomaly': avg_vol
+            }
+
+            print("Detection Analysis:")
+            print(f"  Total Extremes: {len(detections)}")
+            print(f"  Up: {up}")
+            print(f"  Down: {down}")
             print(f"  Avg |Z-score|: {avg_z:.2f}")
             print(f"  Avg Vol Anomaly: {avg_vol:.2f}x")
             print()
@@ -212,20 +255,36 @@ class LogRetriever:
         # Performance trend
         if 'performance' in logs and logs['performance']:
             perf = logs['performance']
-            print("Performance Trend:")
-            print(f"  Snapshots: {len(perf)}")
-            
+
             if len(perf) >= 2:
                 start_val = perf[0]['total_value']
                 end_val = perf[-1]['total_value']
                 change = ((end_val / start_val) - 1) * 100
-                
+
+                analysis['performance_trend'] = {
+                    'snapshots': len(perf),
+                    'start_value': start_val,
+                    'end_value': end_val,
+                    'percent_change': change
+                }
+
+                print("Performance Trend:")
+                print(f"  Snapshots: {len(perf)}")
                 print(f"  Start Value: ${start_val:,.2f}")
                 print(f"  End Value: ${end_val:,.2f}")
                 print(f"  Change: {change:+.2f}%")
+            else:
+                analysis['performance_trend'] = {
+                    'snapshots': len(perf),
+                    'insufficient_data': True
+                }
+                print("Performance Trend:")
+                print(f"  Snapshots: {len(perf)} (insufficient for trend analysis)")
             print()
-        
+
         print("="*60 + "\n")
+
+        return analysis
     
     def export_to_csv(self, logs, filename_prefix='logs'):
         """

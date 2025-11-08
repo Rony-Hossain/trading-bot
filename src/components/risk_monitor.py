@@ -48,7 +48,7 @@ class RiskMonitor:
             'blocked_trades': defaultdict(int),  # reason -> count
             'regime_changes': 0,
             'vix_level': None,
-            'correlation_breakdown': 0.0
+            'correlation_breakdown': None  # None = not computed
         }
     
     def Update(self, current_time, regime_state, candidates):
@@ -73,7 +73,7 @@ class RiskMonitor:
         # Update regime tracking
         self.daily_stats['dominant_regime'] = regime_state['dominant_state']
         self.daily_stats['avg_gpm'] = regime_state['gpm']
-        self.daily_stats['correlation_breakdown'] = regime_state.get('correlation_breakdown', 0.0)
+        self.daily_stats['correlation_breakdown'] = regime_state.get('correlation_breakdown', None)
         
         # Track extremes
         self.daily_stats['extremes_detected'] += len(candidates)
@@ -107,14 +107,15 @@ class RiskMonitor:
         else:
             self.breakers['daily_loss_breach'] = False
         
-        # Correlation spike (placeholder)
+        # Correlation spike (not yet implemented)
         corr = self.daily_stats['correlation_breakdown']
-        if corr > 0.85:
+        if corr is not None and corr > 0.85:
             if not self.breakers['correlation_spike']:
                 self.breakers['correlation_spike'] = True
                 self.algorithm.Log("⚠️ Circuit Breaker: Correlation spike > 0.85")
-        else:
+        elif corr is not None:
             self.breakers['correlation_spike'] = False
+        # If corr is None, preserve previous breaker state (not computed yet)
     
     def LogBlockedTrade(self, symbol, reason):
         """Log a trade that was blocked and why"""
@@ -138,16 +139,21 @@ class RiskMonitor:
     
     def GetDailySummary(self):
         """Generate daily summary report"""
+        # Format correlation value clearly
+        corr = self.daily_stats['correlation_breakdown']
+        corr_str = "not computed" if corr is None else f"{corr:.2f}"
+
         summary = {
             'extremes_detected': self.daily_stats['extremes_detected'],
             'trades_attempted': self.daily_stats['trades_attempted'],
             'trades_executed': self.daily_stats['trades_executed'],
             'dominant_regime': self.daily_stats['dominant_regime'],
             'active_avwap_tracks': self.daily_stats['active_avwap_tracks'],
+            'correlation_breakdown': corr_str,  # Show "not computed" vs numeric value
             'blocked_trades': dict(self.daily_stats['blocked_trades']),
             'circuit_breakers_active': self._GetActiveBreakers()
         }
-        
+
         return summary
     
     def _GetActiveBreakers(self):

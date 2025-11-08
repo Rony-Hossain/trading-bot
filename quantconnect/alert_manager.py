@@ -27,6 +27,7 @@ from datetime import datetime, timedelta
 from collections import defaultdict, deque
 import yaml
 import os
+from pathlib import Path
 
 class AlertManager:
     """
@@ -98,23 +99,23 @@ class AlertManager:
 
     def _load_scanner_yaml(self):
         """
-        Load scanner.yaml configuration file
+        Load scanner.yaml configuration file using pathlib for robustness
 
         Returns:
             dict: Parsed YAML config, or None if not found
         """
-        # Try multiple possible paths
+        # Try multiple possible paths (de-duplicated, using pathlib)
+        # Order: config subdir -> parent config -> current dir
         possible_paths = [
-            './config/scanner.yaml',
-            '../config/scanner.yaml',
-            'scanner.yaml',
-            './scanner.yaml'
+            Path('config/scanner.yaml'),      # ./config/scanner.yaml
+            Path('../config/scanner.yaml'),   # ../config/scanner.yaml
+            Path('scanner.yaml')              # ./scanner.yaml (cwd)
         ]
 
         for path in possible_paths:
-            if os.path.exists(path):
+            if path.exists():
                 try:
-                    with open(path, 'r') as f:
+                    with open(path, 'r', encoding='utf-8') as f:
                         config = yaml.safe_load(f)
                     if self.logger:
                         self.logger.info(f"Loaded scanner config from: {path}", component="AlertManager")
@@ -122,9 +123,12 @@ class AlertManager:
                 except Exception as e:
                     if self.logger:
                         self.logger.error(f"Failed to load {path}: {str(e)}", component="AlertManager")
-                    return None
+                    # Continue trying other paths instead of returning None immediately
+                    continue
 
         # scanner.yaml not found - this is okay, use defaults
+        if self.logger:
+            self.logger.debug("No scanner.yaml found, using default config", component="AlertManager")
         return None
 
     def _default_config(self):

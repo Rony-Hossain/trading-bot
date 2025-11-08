@@ -80,6 +80,9 @@ class HealthMonitor:
             'checks': {},
             'issues': []
         }
+
+        # Track previous check results for delta logging
+        self.previous_checks = {}
         
         # Recovery tracking
         self.recovery_attempts = defaultdict(int)
@@ -240,7 +243,13 @@ class HealthMonitor:
         
         # Overall health
         overall_healthy = all(checks.values())
-        
+
+        # Log per-check deltas (changes since last run)
+        self._log_check_deltas(checks)
+
+        # Update previous checks for next comparison
+        self.previous_checks = checks.copy()
+
         # Update status
         self.health_status = {
             'overall': overall_healthy,
@@ -269,15 +278,53 @@ class HealthMonitor:
         
         return self.health_status
     
+    def _log_check_deltas(self, current_checks):
+        """
+        Log changes in health check results since last run
+
+        Args:
+            current_checks: Dict of current check results {check_name: bool}
+        """
+        if not self.previous_checks or not self.logger:
+            return
+
+        # Find checks that changed state
+        for check_name, current_status in current_checks.items():
+            previous_status = self.previous_checks.get(check_name)
+
+            # Skip if no previous data
+            if previous_status is None:
+                continue
+
+            # Log if status changed
+            if current_status != previous_status:
+                if current_status:
+                    # Check recovered
+                    self.logger.info(
+                        f"Health check RECOVERED: {check_name} (was failing, now passing)",
+                        component="HealthMonitor"
+                    )
+                else:
+                    # Check started failing
+                    self.logger.warning(
+                        f"Health check DEGRADED: {check_name} (was passing, now failing)",
+                        component="HealthMonitor"
+                    )
+
     def _check_data_feed(self):
         """Check if data feed is active and recent"""
-        
+
         # Check if we've received recent data
         if not self.last_bar_time:
             # No data yet (might be warming up)
-            if (self.algorithm.Time - self.start_time).total_seconds() > 300:  # 5 minutes
+            time_elapsed = (self.algorithm.Time - self.start_time).total_seconds()
+            if time_elapsed > 300:  # 5 minutes
                 return False, "No data received in 5 minutes"
             else:
+                # Still in warmup grace period
+                if self.logger and time_elapsed < 60:  # Only log first minute
+                    self.logger.debug(f"WARMUP: Waiting for initial data ({time_elapsed:.0f}s elapsed)",
+                                    component="HealthMonitor")
                 return True, None  # Still warming up
         
         # Check most recent bar
@@ -580,16 +627,26 @@ class HealthMonitor:
         elif metric_type == 'execution_time':
             self.execution_times.append(value)
     
+    @property
+    def overall_healthy(self):
+        """
+        Property to check overall system health
+
+        Returns:
+            bool: True if all health checks are passing, False otherwise
+        """
+        return self.health_status.get('overall', True)
+
     def get_health_summary(self):
         """Get health summary for logging"""
-        
+
         summary = {
-            'overall_healthy': self.health_status['overall'],
+            'overall_healthy': self.overall_healthy,
             'last_check': str(self.health_status['last_check']),
             'issues': len(self.health_status['issues']),
             'checks_passed': sum(1 for v in self.health_status['checks'].values() if v),
             'checks_total': len(self.health_status['checks']),
             'recovery_attempts': dict(self.recovery_attempts)
         }
-        
+
         return summary

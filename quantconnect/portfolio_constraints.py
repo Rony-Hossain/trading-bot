@@ -2,8 +2,8 @@
 Portfolio Constraints - Phase 2
 
 Enforces portfolio-level constraints:
-- Beta neutrality (|β| ≤ 0.05)
-- Sector limits (≤ 2× baseline weight)
+- Beta neutrality (|beta| <= 0.05)
+- Sector limits (<= 2x baseline weight)
 - Position limits (min of 2% NAV, 5% ADV)
 - Gross/Net exposure limits
 
@@ -33,7 +33,7 @@ class PortfolioConstraints:
         self.max_position_pct_nav = 0.02  # 2%
         self.max_position_pct_adv = 0.05  # 5%
         self.max_gross_exposure = 2.5  # 250%
-        self.max_net_exposure = 0.10  # ±10%
+        self.max_net_exposure = 0.10  # +/-10%
         
         # Baseline sector weights (from universe)
         self.sector_baseline = {}
@@ -167,7 +167,7 @@ class PortfolioConstraints:
         projected_net = self.current_net + new_exposure
         
         if abs(projected_net) > self.max_net_exposure:
-            return False, f"Net exposure {projected_net:.2%} > ±{self.max_net_exposure:.2%} limit"
+            return False, f"Net exposure {projected_net:.2%} > +/-{self.max_net_exposure:.2%} limit"
         
         return True, "OK"
     
@@ -201,7 +201,7 @@ class PortfolioConstraints:
         
         # Place hedge
         if self.logger:
-            self.logger.info(f"Beta hedge: {shares_needed:+d} SPY @ ${spy_price:.2f} (β={self.current_beta:.3f})",
+            self.logger.info(f"Beta hedge: {shares_needed:+d} SPY @ ${spy_price:.2f} (beta={self.current_beta:.3f})",
                            component="PortfolioConstraints")
         
         # Would execute hedge here

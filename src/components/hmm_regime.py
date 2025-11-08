@@ -85,7 +85,7 @@ class HMMRegime:
             },
             'gpm': 1.0,  # Global Position Multiplier
             'requires_2x_edge': False,
-            'correlation_breakdown': 0.0
+            'correlation_breakdown': None  # None = not computed yet
         }
         
         # Try to get VIX level
@@ -126,7 +126,8 @@ class HMMRegime:
         
         # Calculate correlation breakdown (placeholder for now)
         # In production, this would analyze cross-correlation of returns
-        regime['correlation_breakdown'] = 0.0
+        # Use None to indicate "not computed" vs 0.0 which implies "no correlation"
+        regime['correlation_breakdown'] = None  # TODO: Implement cross-asset correlation analysis
         
         return regime
     
@@ -208,7 +209,7 @@ class HMMRegime:
                 - state_probs: dict of state probabilities
                 - gpm: float (Global Position Multiplier, 0.3-1.0)
                 - requires_2x_edge: bool (if high-vol regime)
-                - correlation_breakdown: float (0.0-1.0)
+                - correlation_breakdown: float or None (0.0-1.0 when computed, None = not yet implemented)
         """
         return self.Update(self.algorithm.Time)
 

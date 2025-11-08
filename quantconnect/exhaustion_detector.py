@@ -5,12 +5,12 @@ Detects exhaustion/mean-reversion opportunities (fade signals).
 
 Detection Criteria:
 1. Bollinger re-entry: Price back inside Boll(20,2) after outside close
-2. Range compression: ≥3 hours of shrinking ranges
-3. Options tells (Phase 3): ΔIV declining, skew relaxing
+2. Range compression: >=3 hours of shrinking ranges
+3. Options tells (Phase 3): Delta-IV declining, skew relaxing
 
 Entry: Retest of outer band
 Target: Revert to A-VWAP
-Stop: Beyond extreme ± 0.3 ATR
+Stop: Beyond extreme +/- 0.3 ATR
 Time stop: 3-5 hours
 
 Usage:
@@ -37,7 +37,7 @@ class ExhaustionDetector:
         self.boll_period = 20
         self.boll_std = 2.0
         self.min_compression_hours = 3
-        self.compression_threshold = 0.8  # Each range ≤ 0.8× prior
+        self.compression_threshold = 0.8  # Each range <= 0.8x prior
         
         # Tracking
         self.last_detection = {}
@@ -288,7 +288,7 @@ class ExhaustionDetector:
     
     def _CheckRangeCompression(self, hourly_bars):
         """
-        Check for range compression (≥3 hours of shrinking ranges)
+        Check for range compression (>=3 hours of shrinking ranges)
         
         Returns:
             (bool, int): (is_compressing, hours_of_compression)

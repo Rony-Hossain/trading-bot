@@ -59,6 +59,10 @@ class AlertManager:
             'critical': timedelta(minutes=1)
         }
         self.last_alert_time = {}
+
+        # Per-symbol rate limiting for detections (prevent flood)
+        self.symbol_detection_cooldown = timedelta(minutes=15)  # Same as extreme detector cooldown
+        self.last_detection_alert = {}  # symbol -> last alert time
         
         # Daily summary tracking
         self.daily_summary = {
@@ -344,14 +348,36 @@ Extreme-Aware Trading Strategy
         self.send_alert('critical', message, component='CircuitBreaker', details=details)
     
     def alert_extreme_detected(self, symbol, extreme_info):
-        """Alert when extreme detected (optional, can be noisy)"""
+        """
+        Alert when extreme detected (optional, can be noisy)
+
+        Uses per-symbol rate limiting to prevent alert flooding when
+        multiple symbols trigger extremes simultaneously.
+        """
         if not self.config.get('alert_on_detections', False):
             return
-        
+
+        # Check per-symbol rate limit to prevent flood
+        symbol_str = str(symbol)
+        if symbol_str in self.last_detection_alert:
+            time_since = self.algorithm.Time - self.last_detection_alert[symbol_str]
+            if time_since < self.symbol_detection_cooldown:
+                # Silently skip - too soon since last alert for this symbol
+                if self.logger:
+                    self.logger.debug(
+                        f"Detection alert skipped for {symbol_str}: cooldown active "
+                        f"({(self.symbol_detection_cooldown - time_since).total_seconds() / 60:.1f} min remaining)",
+                        component="AlertManager"
+                    )
+                return
+
+        # Update last alert time for this symbol
+        self.last_detection_alert[symbol_str] = self.algorithm.Time
+
         message = (f"Extreme detected: {symbol} | "
                   f"Z={extreme_info['z_score']:.2f} | "
                   f"VolAnom={extreme_info['vol_anomaly']:.2f}x")
-        
+
         self.send_alert('info', message, component='ExtremeDetector', details=extreme_info)
     
     def alert_trade_executed(self, trade_type, symbol, quantity, price, reason):
@@ -461,8 +487,18 @@ See logs for detailed breakdown.
     
     def get_alert_stats(self):
         """Get alert statistics"""
+        # Clean up stale detection cooldowns (older than 24 hours)
+        cutoff = self.algorithm.Time - timedelta(hours=24)
+        stale_symbols = [
+            symbol for symbol, last_time in self.last_detection_alert.items()
+            if last_time < cutoff
+        ]
+        for symbol in stale_symbols:
+            del self.last_detection_alert[symbol]
+
         return {
             'total_alerts': len(self.alert_history),
             'by_level': dict(self.alert_counts),
-            'rate_limited_count': len(self.last_alert_time)
+            'rate_limited_count': len(self.last_alert_time),
+            'detection_cooldown_active': len(self.last_detection_alert)  # Symbols on cooldown
         }

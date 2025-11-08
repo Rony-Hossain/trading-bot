@@ -83,6 +83,9 @@ class ExtremeAwareStrategy(QCAlgorithm):
         self.SetCash(1000)
         self.SetBrokerageModel(BrokerageName.InteractiveBrokersBrokerage, AccountType.Margin)
 
+        # Warmup tracking
+        self.warmup_complete_logged = False
+
         # ==================== LOAD CONFIGURATION ====================
         # ⚠️ SET YOUR CONFIGURATION HERE
         # Week 1-4:  Config(version=1, trading_enabled=False)  # Learn basics
@@ -256,6 +259,12 @@ class ExtremeAwareStrategy(QCAlgorithm):
         if self.IsWarmingUp:
             return
 
+        # Log warmup completion once
+        if not self.warmup_complete_logged:
+            self.logger.info("✓ WARMUP COMPLETE - Strategy now active", component="Main")
+            self.alert_manager.send_alert('info', 'Warmup complete - strategy active', component='Main')
+            self.warmup_complete_logged = True
+
         # Update minute bars
         for symbol in self.active_symbols:
             if symbol in data and data[symbol]:
@@ -343,6 +352,11 @@ class ExtremeAwareStrategy(QCAlgorithm):
         """Hourly scan for extremes"""
 
         if self.IsWarmingUp:
+            # Log warmup progress periodically (once per day during warmup)
+            if self.Time.hour == 10 and self.Time.minute == 0:  # 10 AM daily
+                warmup_days_left = (self.StartDate + timedelta(days=30) - self.Time).days
+                self.logger.info(f"WARMUP: ~{warmup_days_left} days remaining (loading historical data)",
+                               component="Main")
             return
 
         self.logger.info(f"=== HOURLY SCAN: {self.Time.strftime('%H:%M')} ===", component="Main")
@@ -449,6 +463,9 @@ class ExtremeAwareStrategy(QCAlgorithm):
             f"Extreme: {symbol} | Type: {detection['type']} | Z: {detection.get('z_score', 0):.2f}",
             component="ExtremeDetector"
         )
+
+        # Send alert if enabled (with per-symbol flood protection)
+        self.alert_manager.alert_extreme_detected(symbol, detection)
 
         # Get regime
         regime = self.hmm_regime.GetCurrentRegime()
