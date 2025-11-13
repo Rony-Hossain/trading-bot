@@ -1,0 +1,68 @@
+{
+  "platforms": {
+    "quantconnect": {
+      "name": "QuantConnect",
+      "flatten": true,
+      "max_file_size": 32000,
+      "generate_upload_order": true,
+      "bundle_single_file": false,
+      "char_restrictions": [
+        "[\\uD83C-\\uDBFF][\\uDC00-\\uDFFF]",
+        "[\\u2600-\\u27BF]"
+      ],
+      "file_order_priority": ["main.py", "config.py"],
+      "supports_packages": false,
+      "output_dir_name": "quantconnect",
+      "pre_build_script": "tools/hooks/pre_build.py",
+      "pre_build_args": ["--stage", "pre", "--env", "dev"],
+      "post_build_script": "tools/hooks/post_build.py",
+      "post_build_args": ["--stage", "post"],
+      "hook_timeout_sec": 300
+    },
+
+    "backtrader": {
+      "name": "Backtrader",
+      "flatten": false,
+      "max_file_size": null,
+      "generate_upload_order": false,
+      "bundle_single_file": true,
+      "char_restrictions": [],
+      "file_order_priority": [],
+      "supports_packages": true,
+      "output_dir_name": "backtrader_build",
+      "pre_build_script": null,
+      "post_build_script": null,
+      "hook_timeout_sec": 300
+    },
+
+    "zipline": {
+      "name": "Zipline",
+      "flatten": false,
+      "max_file_size": null,
+      "generate_upload_order": false,
+      "bundle_single_file": false,
+      "char_restrictions": [],
+      "file_order_priority": [],
+      "supports_packages": true,
+      "output_dir_name": "zipline_build",
+      "pre_build_script": null,
+      "post_build_script": null,
+      "hook_timeout_sec": 300
+    },
+
+    "freqtrade": {
+      "name": "Freqtrade",
+      "flatten": false,
+      "max_file_size": null,
+      "generate_upload_order": false,
+      "bundle_single_file": false,
+      "char_restrictions": [],
+      "file_order_priority": [],
+      "supports_packages": true,
+      "output_dir_name": "freqtrade_build",
+      "pre_build_script": null,
+      "post_build_script": null,
+      "hook_timeout_sec": 300
+    }
+  }
+}
