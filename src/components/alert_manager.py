@@ -16,7 +16,7 @@ Features:
 
 Usage:
     from alert_manager import AlertManager
-    
+
     alert_manager = AlertManager(algorithm, config)
     alert_manager.send_alert('critical', 'Circuit breaker fired', details)
 """
@@ -30,14 +30,14 @@ class AlertManager:
     """
     Multi-channel alert system for trading strategy
     """
-    
+
     def __init__(self, algorithm, alert_config=None):
         self.algorithm = algorithm
         self.logger = algorithm.logger if hasattr(algorithm, 'logger') else None
-        
+
         # Alert configuration
         self.config = alert_config or self._default_config()
-        
+
         # Alert channels
         self.channels = {
             'email': self.config.get('enable_email', False),
@@ -46,11 +46,11 @@ class AlertManager:
             'telegram': self.config.get('enable_telegram', False),
             'qc_notify': True  # Always available in QC
         }
-        
+
         # Alert history
         self.alert_history = deque(maxlen=1000)
         self.alert_counts = defaultdict(int)
-        
+
         # Rate limiting (prevent spam)
         self.rate_limits = {
             'info': timedelta(minutes=30),
@@ -63,7 +63,7 @@ class AlertManager:
         # Per-symbol rate limiting for detections (prevent flood)
         self.symbol_detection_cooldown = timedelta(minutes=15)  # Same as extreme detector cooldown
         self.last_detection_alert = {}  # symbol -> last alert time
-        
+
         # Daily summary tracking
         self.daily_summary = {
             'date': algorithm.Time.date(),
@@ -72,10 +72,10 @@ class AlertManager:
             'warnings': 0,
             'critical': 0
         }
-        
+
         if self.logger:
             self.logger.info("AlertManager initialized", component="AlertManager")
-    
+
     def _default_config(self):
         """Default alert configuration"""
         return {
@@ -95,22 +95,22 @@ class AlertManager:
             'alert_on_detections': False,  # Too noisy
             'daily_summary_time': '16:05'  # After market close
         }
-    
+
     def send_alert(self, level, message, component=None, details=None):
         """
         Send alert across configured channels
-        
+
         Args:
             level: 'info', 'warning', 'error', 'critical'
             message: Alert message
             component: Component that triggered alert
             details: Additional context (dict)
         """
-        
+
         # Check rate limiting
         if self._is_rate_limited(level, message):
             return
-        
+
         # Create alert object
         alert = {
             'timestamp': self.algorithm.Time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -119,11 +119,11 @@ class AlertManager:
             'component': component,
             'details': details or {}
         }
-        
+
         # Add to history
         self.alert_history.append(alert)
         self.alert_counts[level] += 1
-        
+
         # Add to daily summary
         self.daily_summary['alerts'].append(alert)
         if level == 'error':
@@ -132,56 +132,56 @@ class AlertManager:
             self.daily_summary['warnings'] += 1
         elif level == 'critical':
             self.daily_summary['critical'] += 1
-        
+
         # Format message with emoji
         emoji = self._get_emoji(level)
         formatted_msg = f"{emoji} {level.upper()}: {message}"
-        
+
         if component:
             formatted_msg += f" [{component}]"
-        
+
         # Send via each enabled channel
         if self.channels['qc_notify']:
             self._send_qc_notification(formatted_msg, alert)
-        
+
         if self.channels['email'] and level in ['error', 'critical']:
             self._send_email(formatted_msg, alert)
-        
+
         if self.channels['sms'] and level == 'critical':
             self._send_sms(formatted_msg, alert)
-        
+
         if self.channels['slack']:
             self._send_slack(formatted_msg, alert)
-        
+
         if self.channels['telegram']:
             self._send_telegram(formatted_msg, alert)
-        
+
         # Log it
         if self.logger:
             self.logger.info(f"Alert sent: {formatted_msg}", component="AlertManager")
-    
+
     def _is_rate_limited(self, level, message):
         """Check if alert should be rate limited"""
         key = f"{level}:{message[:50]}"  # Use first 50 chars as key
-        
+
         if key in self.last_alert_time:
             time_since = self.algorithm.Time - self.last_alert_time[key]
             if time_since < self.rate_limits.get(level, timedelta(minutes=5)):
                 return True
-        
+
         self.last_alert_time[key] = self.algorithm.Time
         return False
-    
+
     def _get_emoji(self, level):
         """Get emoji for alert level"""
         emojis = {
             'info': 'ℹ️',
             'warning': '⚠️',
             'error': '❌',
-            'critical': '🚨'
+            'critical': ''
         }
-        return emojis.get(level, '📢')
-    
+        return emojis.get(level, '')
+
     def _send_qc_notification(self, message, alert):
         """Send QuantConnect notification (always available)"""
         try:
@@ -193,20 +193,20 @@ class AlertManager:
             )
         except Exception as e:
             if self.logger:
-                self.logger.error(f"Failed to send QC notification: {str(e)}", 
+                self.logger.error(f"Failed to send QC notification: {str(e)}",
                                 component="AlertManager", exception=e)
-    
+
     def _send_email(self, message, alert):
         """Send email alert (requires configuration)"""
         if not self.config.get('email_recipients'):
             return
-        
+
         try:
             # Example using SendGrid (needs API key)
             # Or use SMTP
-            
+
             subject = f"[{alert['level'].upper()}] Trading Alert - {self.algorithm.Time.strftime('%Y-%m-%d %H:%M')}"
-            
+
             body = f"""
 Trading Strategy Alert
 
@@ -223,49 +223,49 @@ Details:
 ---
 Extreme-Aware Trading Strategy
             """
-            
+
             # Send via configured email service
             # self.algorithm.Notify.Email(subject, body)
-            
+
             if self.logger:
                 self.logger.info(f"Email alert sent to {len(self.config['email_recipients'])} recipients",
                                component="AlertManager")
-                
+
         except Exception as e:
             if self.logger:
-                self.logger.error(f"Failed to send email: {str(e)}", 
+                self.logger.error(f"Failed to send email: {str(e)}",
                                 component="AlertManager", exception=e)
-    
+
     def _send_sms(self, message, alert):
         """Send SMS alert via Twilio (requires configuration)"""
         if not self.config.get('sms_numbers'):
             return
-        
+
         try:
             # Twilio SMS example
             # Requires: twilio_account_sid, twilio_auth_token, twilio_from_number
-            
+
             # Keep SMS short
             sms_message = f"{alert['level'].upper()}: {alert['message'][:100]}"
-            
+
             # Send via Twilio API
             # (Implementation depends on QC's external API support)
-            
+
             if self.logger:
                 self.logger.info(f"SMS alert sent to {len(self.config['sms_numbers'])} numbers",
                                component="AlertManager")
-                
+
         except Exception as e:
             if self.logger:
-                self.logger.error(f"Failed to send SMS: {str(e)}", 
+                self.logger.error(f"Failed to send SMS: {str(e)}",
                                 component="AlertManager", exception=e)
-    
+
     def _send_slack(self, message, alert):
         """Send Slack webhook alert"""
         webhook_url = self.config.get('slack_webhook')
         if not webhook_url:
             return
-        
+
         try:
             # Slack webhook payload
             color_map = {
@@ -274,7 +274,7 @@ Extreme-Aware Trading Strategy
                 'error': '#ff0000',     # Red
                 'critical': '#ff0000'   # Red
             }
-            
+
             payload = {
                 'attachments': [{
                     'color': color_map.get(alert['level'], '#36a64f'),
@@ -296,44 +296,44 @@ Extreme-Aware Trading Strategy
                     'ts': int(self.algorithm.Time.timestamp())
                 }]
             }
-            
+
             # Send webhook request
             # (Would need requests library or QC's HTTP support)
-            
+
             if self.logger:
                 self.logger.info("Slack alert sent", component="AlertManager")
-                
+
         except Exception as e:
             if self.logger:
-                self.logger.error(f"Failed to send Slack alert: {str(e)}", 
+                self.logger.error(f"Failed to send Slack alert: {str(e)}",
                                 component="AlertManager", exception=e)
-    
+
     def _send_telegram(self, message, alert):
         """Send Telegram bot message"""
         bot_token = self.config.get('telegram_bot_token')
         chat_id = self.config.get('telegram_chat_id')
-        
+
         if not bot_token or not chat_id:
             return
-        
+
         try:
             # Telegram bot API
             text = f"*{alert['level'].upper()} Alert*\n\n"
             text += f"_{alert['timestamp']}_\n\n"
             text += f"{alert['message']}\n\n"
             text += f"Component: `{alert.get('component', 'N/A')}`"
-            
+
             # Send via Telegram Bot API
             # (Would need HTTP request capability)
-            
+
             if self.logger:
                 self.logger.info("Telegram alert sent", component="AlertManager")
-                
+
         except Exception as e:
             if self.logger:
-                self.logger.error(f"Failed to send Telegram alert: {str(e)}", 
+                self.logger.error(f"Failed to send Telegram alert: {str(e)}",
                                 component="AlertManager", exception=e)
-    
+
     def alert_circuit_breaker(self, breaker_type, reason, action):
         """Specialized alert for circuit breakers"""
         details = {
@@ -342,11 +342,11 @@ Extreme-Aware Trading Strategy
             'action': action,
             'portfolio_value': self.algorithm.Portfolio.TotalPortfolioValue
         }
-        
+
         message = f"Circuit Breaker: {breaker_type} - {reason} - Action: {action}"
-        
+
         self.send_alert('critical', message, component='CircuitBreaker', details=details)
-    
+
     def alert_extreme_detected(self, symbol, extreme_info):
         """
         Alert when extreme detected (optional, can be noisy)
@@ -379,7 +379,7 @@ Extreme-Aware Trading Strategy
                   f"VolAnom={extreme_info['vol_anomaly']:.2f}x")
 
         self.send_alert('info', message, component='ExtremeDetector', details=extreme_info)
-    
+
     def alert_trade_executed(self, trade_type, symbol, quantity, price, reason):
         """Alert on trade execution"""
         details = {
@@ -389,23 +389,23 @@ Extreme-Aware Trading Strategy
             'price': price,
             'reason': reason
         }
-        
+
         message = f"Trade: {trade_type.upper()} {quantity:+.0f} {symbol} @ ${price:.2f}"
-        
+
         self.send_alert('info', message, component='TradeExecution', details=details)
-    
+
     def alert_error_spike(self, error_count, time_window):
         """Alert when error rate spikes"""
         message = f"Error spike detected: {error_count} errors in {time_window} minutes"
-        
+
         self.send_alert('error', message, component='HealthMonitor')
-    
+
     def alert_detection_drought(self, hours_since_last):
         """Alert when no detections for unusual period"""
         message = f"No extremes detected for {hours_since_last} hours (unusual)"
-        
+
         self.send_alert('warning', message, component='HealthMonitor')
-    
+
     def alert_drawdown(self, current_dd, threshold):
         """Alert on significant drawdown"""
         details = {
@@ -413,23 +413,23 @@ Extreme-Aware Trading Strategy
             'threshold': threshold,
             'portfolio_value': self.algorithm.Portfolio.TotalPortfolioValue
         }
-        
+
         message = f"Drawdown alert: {current_dd:.2%} (threshold: {threshold:.2%})"
-        
+
         self.send_alert('warning', message, component='RiskMonitor', details=details)
-    
+
     def alert_system_health(self, health_status):
         """Alert on system health issues"""
         failed_checks = [k for k, v in health_status.items() if not v]
-        
+
         if failed_checks:
             message = f"System health check failed: {', '.join(failed_checks)}"
             self.send_alert('error', message, component='HealthMonitor', details=health_status)
-    
+
     def send_daily_summary(self):
         """Send end-of-day summary"""
         summary = self.get_daily_summary()
-        
+
         message = f"""Daily Summary - {summary['date']}
 
 Total Alerts: {summary['total_alerts']}
@@ -445,9 +445,9 @@ Daily Return: {summary.get('daily_return', 0):.2%}
 
 See logs for detailed breakdown.
         """
-        
+
         self.send_alert('info', message, component='DailySummary', details=summary)
-    
+
     def get_daily_summary(self):
         """Generate daily summary statistics"""
         summary = {
@@ -458,9 +458,9 @@ See logs for detailed breakdown.
             'warnings': self.daily_summary['warnings'],
             'portfolio_value': self.algorithm.Portfolio.TotalPortfolioValue
         }
-        
+
         return summary
-    
+
     def reset_daily_summary(self):
         """Reset daily summary for new day"""
         self.daily_summary = {
@@ -470,21 +470,21 @@ See logs for detailed breakdown.
             'warnings': 0,
             'critical': 0
         }
-    
+
     def get_alert_history(self, hours=24, level=None):
         """Get alert history for specified time period"""
         cutoff_time = self.algorithm.Time - timedelta(hours=hours)
-        
+
         history = [
             alert for alert in self.alert_history
             if datetime.strptime(alert['timestamp'], "%Y-%m-%d %H:%M:%S") >= cutoff_time
         ]
-        
+
         if level:
             history = [a for a in history if a['level'] == level]
-        
+
         return history
-    
+
     def get_alert_stats(self):
         """Get alert statistics"""
         # Clean up stale detection cooldowns (older than 24 hours)

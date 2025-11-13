@@ -634,7 +634,7 @@ class ExtremeAwareStrategy(QCAlgorithm):
         # Check if observation mode
         if self.config['OBSERVATION_MODE']:
             self.logger.info(
-                f"💡 OBSERVATION MODE - Would enter: {shares:+d} {symbol} @ ${price:.2f}",
+                f" OBSERVATION MODE - Would enter: {shares:+d} {symbol} @ ${price:.2f}",
                 component="Main"
             )
             return
@@ -771,7 +771,7 @@ class ExtremeAwareStrategy(QCAlgorithm):
         # Check if observation mode
         if self.config['OBSERVATION_MODE']:
             self.logger.info(
-                f"💡 OBSERVATION MODE - Would exit: {-shares:+d} {symbol} @ ${current_price:.2f} | "
+                f" OBSERVATION MODE - Would exit: {-shares:+d} {symbol} @ ${current_price:.2f} | "
                 f"P&L: ${pnl:+.2f} ({pnl_pct:+.2%}) | Reason: {reason}",
                 component="Main"
             )

@@ -1,4 +1,4 @@
-﻿import os, json, urllib.request, sys
+import os, json, urllib.request, sys
 
 def _slack_post(text: str) -> None:
     url = os.getenv("SLACK_WEBHOOK_URL")
