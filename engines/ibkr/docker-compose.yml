@@ -1,0 +1,42 @@
+# docker/ibkr/docker-compose.yml
+version: "3.9"
+
+services:
+  ibkr-gateway:
+    image: IMAGE_FOR_IB_GATEWAY   # <-- replace with your preferred IB Gateway image
+    container_name: ibkr-gateway
+    restart: unless-stopped
+    environment:
+      # Typical ports: 4002 (paper), 4001 (live). Adjust to your image docs.
+      TWS_USERID: ${TWS_USERID}
+      TWS_PASSWORD: ${TWS_PASSWORD}
+      TRADING_MODE: paper
+      IBC_PORT: 4002
+      JAVA_TOOL_OPTIONS: "-Xmx512m"
+    ports:
+      - "4002:4002"
+    volumes:
+      - ./gateway-config:/config   # optional, depends on image
+    healthcheck:
+      test: ["CMD", "bash", "-c", "echo > /dev/tcp/127.0.0.1/4002"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  bot:
+    build:
+      context: ../..            # repo root
+      dockerfile: docker/ibkr/bot.Dockerfile
+    container_name: ibkr-bot
+    depends_on:
+      ibkr-gateway:
+        condition: service_healthy
+    environment:
+      IBKR_HOST: ibkr-gateway
+      IBKR_PORT: 4002
+      IBKR_CLIENT_ID: 7
+      IBKR_SYMBOLS: "SPY,QQQ"
+      IBKR_MDT: 3
+    volumes:
+      - ../..:/app               # mount repo into container
+    command: ["python", "scripts/run_ibkr_paper.py"]

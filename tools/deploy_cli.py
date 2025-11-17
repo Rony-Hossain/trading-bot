@@ -1,4 +1,5 @@
 # deploy_cli.py — stdlib CLI wrapper (dist/<platform> output)
+# python -m tools.deploy_cli build --platform quantconnect --force
 
 from __future__ import annotations
 

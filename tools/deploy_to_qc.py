@@ -18,7 +18,7 @@ import deploy_core
 def main():
     print("\n=== Building QuantConnect package ===\n")
     root_dir = Path(__file__).resolve().parents[1]
-    result = deploy_core.build_quantconnect(root_dir=root_dir, force=True)
+    result = deploy_core.build_quantconnect(root_dir=root_dir, dry_run=False , force=True)
 
     if not result["success"]:
         print("Build failed. Warnings:", file=sys.stderr)

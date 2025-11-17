@@ -74,3 +74,14 @@ Thumbs.db
 *.swo
 
 .env
+
+.pre_build_ran
+
+
+# dist forflder
+dist/
+
+# code dumps
+dumps/
+
+__pycache__/

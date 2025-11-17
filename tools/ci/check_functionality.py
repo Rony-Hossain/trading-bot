@@ -45,21 +45,66 @@ if hasattr(mod, "main"): mod.main()
 print("__OK__")
 """
 
-def run_tests(root: Path) -> tuple[bool,str]:
+# def run_tests(root: Path) -> tuple[bool,str]:
+#     try:
+#         p = subprocess.run([sys.executable,"-m","pytest","-q","tools/tests"],
+#                            cwd=str(root), text=True, capture_output=True)
+#         if p.returncode == 0: return True, p.stdout.strip() or "pytest: ok"
+#         if "pytest" in (p.stdout+p.stderr).lower():
+#             return False, (p.stdout+"\n"+p.stderr)[-2000:]
+#     except Exception: pass
+#     try:
+#         p = subprocess.run([sys.executable,"-m","unittest","discover","-s","tools/tests"],
+#                            cwd=str(root), text=True, capture_output=True)
+#         if p.returncode == 0: return True, p.stdout.strip() or "unittest: ok"
+#         return False, (p.stdout+"\n"+p.stderr)[-2000:]
+#     except Exception as e:
+#         return False, f"could not run tests: {e}"
+
+def run_tests(root: Path) -> tuple[bool, str]:
+    """
+    Run the project's unit tests.
+
+    Priority:
+      1) pytest tests/
+      2) unittest discover -s tests
+
+    Returns (ok, log_excerpt).
+    """
+    test_dir = "tests"
+
+    # Try pytest quietly first
     try:
-        p = subprocess.run([sys.executable,"-m","pytest","-q","tools/tests"],
-                           cwd=str(root), text=True, capture_output=True)
-        if p.returncode == 0: return True, p.stdout.strip() or "pytest: ok"
-        if "pytest" in (p.stdout+p.stderr).lower():
-            return False, (p.stdout+"\n"+p.stderr)[-2000:]
-    except Exception: pass
+        proc = subprocess.run(
+            [sys.executable, "-m", "pytest", "-q", test_dir],
+            cwd=str(root),
+            text=True,
+            capture_output=True,
+        )
+        if proc.returncode == 0:
+            return True, proc.stdout.strip() or "pytest: ok"
+
+        # If pytest actually ran but tests failed, surface that
+        if "pytest" in (proc.stderr or "").lower() or "pytest" in (proc.stdout or "").lower():
+            return False, (proc.stdout + "\n" + proc.stderr)[-2000:]
+    except Exception:
+        # Fall through to unittest
+        pass
+
+    # Fallback: unittest discover
     try:
-        p = subprocess.run([sys.executable,"-m","unittest","discover","-s","tools/tests"],
-                           cwd=str(root), text=True, capture_output=True)
-        if p.returncode == 0: return True, p.stdout.strip() or "unittest: ok"
-        return False, (p.stdout+"\n"+p.stderr)[-2000:]
+        proc = subprocess.run(
+            [sys.executable, "-m", "unittest", "discover", "-s", test_dir],
+            cwd=str(root),
+            text=True,
+            capture_output=True,
+        )
+        if proc.returncode == 0:
+            return True, proc.stdout.strip() or "unittest: ok"
+        return False, (proc.stdout + "\n" + proc.stderr)[-2000:]
     except Exception as e:
-        return False, f"could not run tests: {e}"
+        return False, f"unit test run failed to start: {e}"
+
 
 def smoke_file(harness_code: str, target: Path, timeout: int=20):
     runner = ROOT / ".tmp_smoke.py"

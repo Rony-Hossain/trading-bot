@@ -429,7 +429,7 @@ class PVSMonitor:
         summary += f"Confidence: {info['components']['confidence']:.1f}"
 
         if info['action']['should_halt']:
-            summary += " | ⚠️ HALT"
+            summary += " |  HALT"
         elif info['action']['size_multiplier'] < 1.0:
             summary += f" | Size: {info['action']['size_multiplier']:.1f}x"
 

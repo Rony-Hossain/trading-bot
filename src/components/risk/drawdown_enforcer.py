@@ -287,6 +287,6 @@ class DrawdownEnforcer:
         summary += f"Peak: ${info['peak_value']:,.2f}"
 
         if info['should_halt']:
-            summary += " | ⚠️ HALTED"
+            summary += " |  HALTED"
 
         return summary

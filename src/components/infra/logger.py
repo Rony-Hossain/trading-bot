@@ -106,7 +106,7 @@ class StrategyLogger:
         """Warning level - potential issues"""
         if self.current_level <= self.LOG_LEVELS['WARNING']:
             formatted, entry = self._format_message('WARNING', message, component, extra_data)
-            self.algorithm.Log(f"⚠️ {formatted}")
+            self.algorithm.Log(f" {formatted}")
             self.daily_logs.append(entry)
             self.log_counts['WARNING'] += 1
 
@@ -123,7 +123,7 @@ class StrategyLogger:
             }
             formatted += f"\n    Exception: {type(exception).__name__}: {str(exception)}"
 
-        self.algorithm.Error(f"❌ {formatted}")
+        self.algorithm.Error(f" {formatted}")
         self.daily_logs.append(entry)
         self.error_logs.append(entry)
         self.log_counts['ERROR'] += 1

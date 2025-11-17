@@ -1,0 +1,5 @@
+{
+  "engine-image": "quantconnect/lean:latest",
+  "data-folder": "data",
+  "default-language": "python"
+}

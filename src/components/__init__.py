@@ -1,18 +1,70 @@
-"""
-Components package for Extreme-Aware Trading Strategy
-Contains all the core trading logic modules
-"""
+# src/components/__init__.py
 
-from .universe_filter import UniverseFilter
-from .extreme_detector import ExtremeDetector
-from .hmm_regime import HMMRegime
-from .avwap_tracker import AVWAPTracker
-from .risk_monitor import RiskMonitor
+# Signals
+from .signals import (
+    ExtremeDetector,
+    ExhaustionDetector,
+    UniverseFilter,
+    HMMRegime,
+    AVWAPTracker,
+    SignalPipeline,
+)
+
+# Risk
+from .risk import (
+    RiskMonitor,
+    DrawdownEnforcer,
+    PVSMonitor,
+    CascadePrevention,
+    PortfolioConstraints,
+)
+
+# Execution
+from .execution import (
+    DynamicSizer,
+    EntryTiming,
+    TradeEngine,
+)
+
+# Infra
+from .infra import (
+    AlertManager,
+    HealthMonitor,
+    StrategyLogger,
+    LogRetriever,
+)
+
+# Analysis
+from .analysis import (
+    BacktestAnalyzer,
+    BacktestLogger,
+)
+
 
 __all__ = [
-    'UniverseFilter',
-    'ExtremeDetector',
-    'HMMRegime',
-    'AVWAPTracker',
-    'RiskMonitor'
+    # Signals
+    "ExtremeDetector",
+    "ExhaustionDetector",
+    "UniverseFilter",
+    "HMMRegime",
+    "AVWAPTracker",
+    "SignalPipeline",
+    # Risk
+    "RiskMonitor",
+    "DrawdownEnforcer",
+    "PVSMonitor",
+    "CascadePrevention",
+    "PortfolioConstraints",
+    # Execution
+    "DynamicSizer",
+    "EntryTiming",
+    "TradeEngine",
+    # Infra
+    "AlertManager",
+    "HealthMonitor",
+    "StrategyLogger",
+    "LogRetriever",
+    # Analysis
+    "BacktestAnalyzer",
+    "BacktestLogger",
 ]
