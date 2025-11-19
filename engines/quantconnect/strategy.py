@@ -2,33 +2,48 @@
 
 from AlgorithmImports import *
 from config import Config
-from src.core_strategy import ExtremeAwareCore
-from engines.quantconnect.host import QCAlgoHost
+# CoreStrategy import: source vs. flattened dist
+try:
+    # When running from your repo (src/ layout)
+    from src.core_strategy import ExtremeAwareCore
+except ImportError:
+    # When running from QC/dist (flat files)
+    from core_strategy import ExtremeAwareCore
+
+# Host adapter import: source vs. flattened dist
+try:
+    # Source layout
+    from engines.quantconnect.host import QCAlgoHost
+except ImportError:
+    # Flat dist layout
+    from host import QCAlgoHost
 
 
 class ExtremeAwareStrategy(QCAlgorithm):
     """
-    QuantConnect adapter for the Extreme-Aware core.
+    QuantConnect entrypoint.
 
-    QCAlgorithm lives here.
-    All real logic lives in ExtremeAwareCore + components.
+    Thin wrapper that:
+      - creates Config
+      - wraps self in QCAlgoHost
+      - hands everything to ExtremeAwareCore
     """
 
     def Initialize(self) -> None:
-        # Build config for this run
+        # 1) Build config – THIS is the only place you pick version/mode for QC
         config = Config(
             version=2,          # 1 = basic, 2 = advanced
-            trading_enabled=False,
+            trading_enabled=True,
         )
 
-        # Wrap QCAlgorithm in the host adapter
+        # 2) Wrap QCAlgorithm in host adapter
         host = QCAlgoHost(self)
 
-        # Create the platform-agnostic core and initialize it
+        # 3) Build core app (platform-agnostic) and initialize
         self.app = ExtremeAwareCore(self, config, host=host)
         self.app.initialize()
 
-    # ------------- Universe selection ------------- #
+    # ---- Universe selection passthroughs ----
 
     def SelectCoarse(self, coarse):
         return self.app.select_coarse(coarse)
@@ -36,7 +51,7 @@ class ExtremeAwareStrategy(QCAlgorithm):
     def SelectFine(self, fine):
         return self.app.select_fine(fine)
 
-    # ------------- Data + scheduled events -------- #
+    # ---- Data + scheduled events passthroughs ----
 
     def OnData(self, data: Slice) -> None:
         self.app.on_data(data)

@@ -21,8 +21,9 @@ import random
 class EntryTiming:
     """Entry timing protocol for better fills"""
 
-    def __init__(self, algorithm):
+    def __init__(self, algorithm, config=None):
         self.algorithm = algorithm
+        self.config = config or getattr(algorithm, "config", None)
         self.wait_min = 15
         self.wait_max = 30
         self.max_retracement = 0.50

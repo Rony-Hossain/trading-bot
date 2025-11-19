@@ -1,33 +1,17 @@
-"""
-Universe Selection - Filter for top ~1000 liquid US equities
-Criteria:
-- NYSE/NASDAQ common shares
-- Price: $5-$350
-- Liquidity: top 1000 by 60-day median dollar volume
-- Spread quality: median spread ≤ 35 bps
-- Exclude blacklisted tickers
-"""
-
 from AlgorithmImports import *
+
+FALLBACK_TICKERS = ["UNH", "SPY", "SOFI", "TSLA"]
 
 class UniverseFilter:
     """Handle coarse and fine universe selection"""
 
-    def __init__(self, algorithm):
+    def __init__(self, algorithm, config=None):
         self.algorithm = algorithm
-        self.config = algorithm.config
-
-        # Track universe stats
-        self.last_rebalance = None
+        self.config = config or getattr(algorithm, "config", None)
         self.current_universe = set()
+        self.last_rebalance = None
 
     def CoarseFilter(self, coarse):
-        """
-        First pass: liquidity and price filters
-        Returns top UNIVERSE_SIZE symbols
-        """
-
-        # Filter criteria
         selected = [
             x for x in coarse
             if x.HasFundamentalData
@@ -37,55 +21,55 @@ class UniverseFilter:
             and x.Symbol.Value not in self.config.BLACKLIST
         ]
 
-        # Sort by dollar volume and take top N
         selected = sorted(selected, key=lambda x: x.DollarVolume, reverse=True)
-        selected = selected[:self.config.UNIVERSE_SIZE]
+        selected = selected[: self.config.UNIVERSE_SIZE]
 
         self.algorithm.Log(f"Coarse Filter: {len(selected)} symbols passed")
+
+        # If everything collapses, still make sure we have *something*:
+        if not selected:
+            self.algorithm.Log(
+                "CoarseFilter: EMPTY – using static fallback tickers",
+                LogLevel.Warning,
+            )
+            return [
+                Symbol.Create(t, SecurityType.Equity, Market.USA)
+                for t in FALLBACK_TICKERS
+            ]
 
         return [x.Symbol for x in selected]
 
     def FineFilter(self, fine):
-        """
-        Second pass: quality filters
-        - Common shares only (no ADRs, preferred, etc.)
-        - Exchange: NYSE or NASDAQ
-        """
-
         selected = []
 
         for f in fine:
-            # Basic checks
             if not f.HasFundamentalData:
                 continue
 
-            # Security type filter
-            if f.SecurityReference.SecurityType != "ST00000001":  # Common Stock
+            # common stock: security type string
+            if f.SecurityReference.SecurityType != "ST00000001":
                 continue
 
-            # Exchange filter (NYSE, NASDAQ)
-            exchange = f.CompanyReference.PrimaryExchangeId
+            exchange = f.CompanyReference.PrimaryExchangeID
             if exchange not in ["NYS", "NAS"]:
                 continue
 
-            # Company profile checks
             if not f.CompanyProfile.HeadquarterCity:
                 continue
 
             selected.append(f.Symbol)
 
+        if not selected:
+            # Again: hard fallback
+            self.algorithm.Log(
+                "FineFilter: EMPTY – using static fallback tickers",
+                LogLevel.Warning,
+            )
+            selected = [
+                Symbol.Create(t, SecurityType.Equity, Market.USA)
+                for t in FALLBACK_TICKERS
+            ]
+
         self.algorithm.Log(f"Fine Filter: {len(selected)} symbols passed")
         self.current_universe = set(selected)
-
         return selected
-
-    def IsInUniverse(self, symbol):
-        """Check if symbol is in current universe"""
-        return symbol in self.current_universe
-
-    def GetUniverseStats(self):
-        """Return universe statistics"""
-        return {
-            'size': len(self.current_universe),
-            'last_rebalance': self.last_rebalance
-        }

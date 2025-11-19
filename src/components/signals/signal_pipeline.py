@@ -8,10 +8,6 @@ class SignalPipeline:
       - building/maintaining minute bars
       - running extreme + exhaustion detectors
       - returning a unified list of detections
-
-    This is where you move:
-      - minute-bar update logic from main.OnData
-      - _ScanForExtremes (and exhaustion scan) from main.py
     """
 
     def __init__(self, algorithm):
@@ -19,13 +15,13 @@ class SignalPipeline:
         self.config = algorithm.config
         self.logger = algorithm.logger
 
-        # Direct references to components the pipeline depends on
-        self.extreme_detector = algorithm.extreme_detector
-        self.exhaustion_detector = algorithm.exhaustion_detector
-        self.health_monitor = algorithm.health_monitor
-        self.risk_monitor = algorithm.risk_monitor
-        self.hmm_regime = algorithm.hmm_regime
-        self.avwap_tracker = algorithm.avwap_tracker
+        # Use getattr so we don't explode if something is disabled / missing
+        self.extreme_detector = getattr(algorithm, "extreme_detector", None)
+        self.exhaustion_detector = getattr(algorithm, "exhaustion_detector", None)
+        self.health_monitor = getattr(algorithm, "health_monitor", None)
+        self.risk_monitor = getattr(algorithm, "risk_monitor", None)
+        self.hmm_regime = getattr(algorithm, "hmm_regime", None)
+        self.avwap_tracker = getattr(algorithm, "avwap_tracker", None)
 
     # ---------------- MINUTE BAR PIPELINE ----------------
 
@@ -33,29 +29,38 @@ class SignalPipeline:
         """
         Update or build 1-minute bars from raw QC data (Slice).
 
-        >>> THIS IS WHERE YOU PASTE THE MINUTE-BAR LOGIC FROM main.OnData <<<
-        Currently you do something like:
-          - for each symbol in data:
-              - append TradeBar to self.minute_bars[symbol]
-              - keep last N
-              - notify HealthMonitor if missing
-        Keep self.algo.minute_bars as the storage to avoid touching other code.
+        Stores history on self.algo.minute_bars:
+          minute_bars[symbol] = [TradeBar, TradeBar, ...]
         """
 
         minute_bars = self.algo.minute_bars
 
         for symbol, bar in data.Bars.items():
-            # Example structure – replace with your existing logic:
             if symbol not in minute_bars:
                 minute_bars[symbol] = []
             minute_bars[symbol].append(bar)
 
-            # If you currently cap history length, do that here:
-            # if len(minute_bars[symbol]) > self.config.LOOKBACK_MINUTES:
-            #     minute_bars[symbol] = minute_bars[symbol][-self.config.LOOKBACK_MINUTES :]
+            # Optional: cap history length to LOOKBACK_MINUTES
+            if len(minute_bars[symbol]) > self.config.LOOKBACK_MINUTES:
+                minute_bars[symbol] = minute_bars[symbol][-self.config.LOOKBACK_MINUTES :]
 
-        # If HealthMonitor currently checks for missing bars in OnData,
-        # move that logic here too.
+        # If HealthMonitor used to check missing symbols in OnData,
+        # you can move that logic here and call self.health_monitor.run_health_check()
+        # or a lighter data-quality check.
+
+    def Run(self, data):
+        """
+        Primary entrypoint used by core_strategy.on_data.
+
+        1) Update intraday minute-bar history.
+        2) Scan for detections (extreme/exhaustion/etc.).
+        3) Return list of detection dicts.
+        """
+        # Maintain rolling minute bars
+        self.UpdateMinuteBars(data)
+
+        # Scan for new signals
+        return self.ScanForDetections()
 
     # ---------------- SCANNING PIPELINE ----------------
 
@@ -63,15 +68,12 @@ class SignalPipeline:
         """
         Run extreme & exhaustion detectors and return a list of detection dicts.
 
-        >>> THIS IS WHERE YOU MOVE _ScanForExtremes FROM main.py <<<
-
         Contract:
             return [
                 {
                     "symbol": Symbol,
-                    "type": "EXTREME_LONG" / "EXTREME_SHORT" / "EXHAUSTION_LONG" / ...,
-                    "z_score": float,
-                    "direction": "LONG"/"SHORT",
+                    "type": "extreme" / "exhaustion" / ...,
+                    "direction": "up"/"down"/...,
                     # plus any extra fields your detectors already add
                 },
                 ...
@@ -80,35 +82,48 @@ class SignalPipeline:
 
         detections: list[dict] = []
 
-        # 1) Build candidates for extreme detector from minute bars
-        # Right now you probably do something like:
-        #   candidates = self.extreme_detector.Scan(self.algo.minute_bars)
-        # Move that here.
-        minute_bars = self.algo.minute_bars
+        # Defensive: if algo doesn't have minute_bars yet, nothing to do
+        minute_bars = getattr(self.algo, "minute_bars", {}) or {}
+        if not minute_bars:
+            return detections
 
-        # ---- Extreme detection (paste your existing logic here) ----
-        extreme_candidates = self.extreme_detector.Scan(minute_bars)
-        for symbol, info in extreme_candidates:
-            detections.append(
-                {
-                    "symbol": symbol,
-                    "type": info["type"],  # or whatever you currently use
-                    "z_score": info.get("z_score", 0.0),
-                    "direction": info.get("direction", "UNKNOWN"),
-                    **info,
-                }
-            )
+        # ---------- 1) EXTREME DETECTIONS ----------
+        if self.extreme_detector is not None:
+            # ExtremeDetector.Scan now returns list[dict]:
+            #   [{"symbol": ..., "type": "extreme", "direction": "up"/"down", ...}, ...]
+            extreme_candidates = self.extreme_detector.Scan(minute_bars) or []
+            detections.extend(extreme_candidates)
 
-        # ---- Exhaustion detection (if you have it) ----
-        # If you already scan for exhaustion separately in _ScanForExtremes,
-        # move that code here as well:
-        # exhaustion_signals = self.exhaustion_detector.Scan(minute_bars, ...)
-        # for symbol, info in exhaustion_signals:
-        #     detections.append({ ... })
+        # ---------- 2) EXHAUSTION DETECTIONS (if present) ----------
+        if self.exhaustion_detector is not None:
+            exhaustion_raw = self.exhaustion_detector.Scan(minute_bars) or []
 
-        # 2) Update risk monitor / health here if you currently do it in _ScanForExtremes
-        # Example: update regime state & candidates
-        regime_state = self.hmm_regime.GetCurrentRegime()
-        self.risk_monitor.Update(self.algo.Time, regime_state, extreme_candidates)
+            normalized_exhaustion: list[dict] = []
+
+            for item in exhaustion_raw:
+                if isinstance(item, dict):
+                    # Already a detection dict – make sure minimal keys exist
+                    d = dict(item)
+                    d.setdefault("type", "exhaustion")
+                    normalized_exhaustion.append(d)
+                else:
+                    # Legacy: (symbol, info_dict)
+                    try:
+                        symbol, info = item
+                    except Exception:
+                        continue
+
+                    info = dict(info)
+                    info.setdefault("symbol", symbol)
+                    info.setdefault("type", "exhaustion")
+                    normalized_exhaustion.append(info)
+
+            detections.extend(normalized_exhaustion)
+
+        # ---------- 3) UPDATE RISK MONITOR / REGIME STATS ----------
+        if self.hmm_regime is not None and self.risk_monitor is not None:
+            regime_state = self.hmm_regime.GetCurrentRegime()
+            # Pass all detections to RiskMonitor; it can filter by type if needed
+            self.risk_monitor.Update(self.algo.Time, regime_state, detections)
 
         return detections

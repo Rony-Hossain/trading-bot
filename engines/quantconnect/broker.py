@@ -1,6 +1,12 @@
 # engines/quantconnect/broker.py
 from __future__ import annotations
-from broker_api import BrokerAPI, Order
+try:
+    # Source layout
+    from src.broker_api import  BrokerAPI, Order
+except ImportError:
+    # Flat dist layout
+    from broker_api import BrokerAPI, Order
+
 
 class QCBroker(BrokerAPI):
     def __init__(self, algo):

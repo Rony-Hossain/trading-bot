@@ -57,6 +57,24 @@ class Config:
     def to_dict(self) -> Dict[str, Any]:
         return {k: getattr(self, k) for k in self.keys()}
 
+    def get(self, key: str, default: Any = None) -> Any:
+        """
+        Dict-like .get() for backwards compatibility with old components.
+
+        Tries:
+          - exact attribute name
+          - UPPERCASE version (so 'enable_email' can map to ENABLE_EMAIL)
+          - otherwise returns default
+        """
+        if hasattr(self, key):
+            return getattr(self, key)
+
+        upper = key.upper()
+        if hasattr(self, upper):
+            return getattr(self, upper)
+
+        return default
+
     # ---- core -------------------------------------------------------------
     def __init__(self, version: int = 2, trading_enabled: bool = False):
         if version not in (1, 2):
@@ -89,11 +107,11 @@ class Config:
         self.BLACKLIST = [s.upper() for s in ["BRK.A", "BRK.B"]]
 
         # ==================== EXTREME DETECTION ====================
-        self.Z_THRESHOLD = 2.0  # |Z₆₀| ≥ 2.0 for detection
-        self.VOLUME_ANOMALY_NORMAL = 1.5  # 1.5x median volume
-        self.VOLUME_ANOMALY_AUCTION = 2.0  # 2x for auction periods
-        self.LOOKBACK_MINUTES = 60  # Lookback window for Z-score
-        self.MIN_BARS_FOR_DETECTION = 60  # Minimum bars needed
+        self.Z_THRESHOLD = 1.0  # |Z₆₀| ≥ 2.0 for detection
+        self.VOLUME_ANOMALY_NORMAL = 0.3  # 1.5x median volume
+        self.VOLUME_ANOMALY_AUCTION = 0.5  # 2x for auction periods
+        self.LOOKBACK_MINUTES = 15  # Lookback window for Z-score
+        self.MIN_BARS_FOR_DETECTION = 30  # Minimum bars needed
 
         # ==================== SPREAD GUARDS ====================
         self.HARD_SKIP_SPREAD_BPS = 40  # Never trade above this

@@ -3,34 +3,93 @@
 from AlgorithmImports import *
 from datetime import timedelta
 import time
-
-from src.platform.base import IAlgoHost
-from engines.quantconnect.host import QCAlgoHost
 from config import Config
 
-# Import through your components façade
-from src.components import (
-    ExtremeDetector,
-    ExhaustionDetector,
-    UniverseFilter,
-    HMMRegime,
-    AVWAPTracker,
-    SignalPipeline,
-    RiskMonitor,
-    DrawdownEnforcer,
-    PVSMonitor,
-    CascadePrevention,
-    PortfolioConstraints,
-    DynamicSizer,
-    EntryTiming,
-    TradeEngine,
-    AlertManager,
-    HealthMonitor,
-    StrategyLogger,
-    LogRetriever,
-    BacktestAnalyzer,
-    BacktestLogger,
-)
+try:
+    # Source layout
+    from src.platform.base import IAlgoHost
+    from engines.quantconnect.host import QCAlgoHost
+    from components.execution import TradeEngine
+
+except ImportError:
+    # Flat dist layout
+    from base import IAlgoHost
+    from host import QCAlgoHost
+    from execution import TradeEngine
+
+
+# Components: try source layout first, then flat QC layout
+try:
+    # 1) Source layout: project run with 'src' package
+    from src.components import (
+        ExtremeDetector,
+        ExhaustionDetector,
+        UniverseFilter,
+        HMMRegime,
+        AVWAPTracker,
+        SignalPipeline,
+        RiskMonitor,
+        DrawdownEnforcer,
+        PVSMonitor,
+        CascadePrevention,
+        PortfolioConstraints,
+        DynamicSizer,
+        EntryTiming,
+        TradeEngine,
+        AlertManager,
+        HealthMonitor,
+        StrategyLogger,
+        LogRetriever,
+        BacktestAnalyzer,
+        BacktestLogger,
+    )
+except ImportError:
+    try:
+        # 2) Source layout where 'components' is on PYTHONPATH as top-level
+        from components import (
+            ExtremeDetector,
+            ExhaustionDetector,
+            UniverseFilter,
+            HMMRegime,
+            AVWAPTracker,
+            SignalPipeline,
+            RiskMonitor,
+            DrawdownEnforcer,
+            PVSMonitor,
+            CascadePrevention,
+            PortfolioConstraints,
+            DynamicSizer,
+            EntryTiming,
+            TradeEngine,
+            AlertManager,
+            HealthMonitor,
+            StrategyLogger,
+            LogRetriever,
+            BacktestAnalyzer,
+            BacktestLogger,
+        )
+    except ImportError:
+        # 3) QC dist layout: all modules flattened into the same folder
+        from extreme_detector import ExtremeDetector
+        from exhaustion_detector import ExhaustionDetector
+        from universe_filter import UniverseFilter
+        from hmm_regime import HMMRegime
+        from avwap_tracker import AVWAPTracker
+        from signal_pipeline import SignalPipeline
+        from risk_monitor import RiskMonitor
+        from drawdown_enforcer import DrawdownEnforcer
+        from pvs_monitor import PVSMonitor
+        from cascade_prevention import CascadePrevention
+        from portfolio_constraints import PortfolioConstraints
+        from dynamic_sizer import DynamicSizer
+        from entry_timing import EntryTiming
+        from trade_engine import TradeEngine
+        from alert_manager import AlertManager
+        from health_monitor import HealthMonitor
+        from logger import StrategyLogger
+        from log_retrieval import LogRetriever
+        from backtest_analyzer import BacktestAnalyzer
+        from backtest_logger import BacktestLogger
 
 
 class ExtremeAwareCore:
@@ -50,7 +109,7 @@ class ExtremeAwareCore:
         algo: engine-native object (QCAlgorithm, bt.Strategy, etc.)
         host: platform adapter; if None, we build a QC host by default.
         """
-        self.algo = algo    
+        self.algo = algo
         self.config = config
         self.host = host or QCAlgoHost(algo)
 
@@ -102,8 +161,24 @@ class ExtremeAwareCore:
         )
         a.health_monitor = self.health_monitor
 
-        self.backtest_analyzer = BacktestAnalyzer(a)
-        a.backtest_analyzer = self.backtest_analyzer
+        # Analysis tools (optional on QC)
+        if BacktestAnalyzer is not None:
+            self.backtest_analyzer = BacktestAnalyzer(a)
+            a.backtest_analyzer = self.backtest_analyzer
+        else:
+            self.backtest_analyzer = None
+
+        if BacktestLogger is not None:
+            self.backtest_logger = BacktestLogger(a)
+            a.backtest_logger = self.backtest_logger
+        else:
+            self.backtest_logger = None
+            if hasattr(self, "logger"):
+                self.logger.warning(
+                    "BacktestLogger not available in this environment – "
+                    "skipping enhanced backtest logging.",
+                    component="Backtest",
+                )
 
         mode_desc = "OBSERVATION" if c.OBSERVATION_MODE else "LIVE TRADING"
         self.logger.info("=" * 70, component="Main")
@@ -184,7 +259,6 @@ class ExtremeAwareCore:
         self.signal_pipeline = SignalPipeline(a)
         a.signal_pipeline = self.signal_pipeline
 
-        from components.execution import TradeEngine
         self.trade_engine = TradeEngine(a)
         a.trade_engine = self.trade_engine
 
@@ -192,9 +266,9 @@ class ExtremeAwareCore:
 
         # ---- Data structures ----
         a.active_symbols = []
-        a.minute_bars = {}      # symbol -> list of minute bars
+        a.minute_bars = {}  # symbol -> list of minute bars
         a.pending_entries = {}  # symbol -> entry info
-        a.active_positions = {} # symbol -> position info
+        a.active_positions = {}  # symbol -> position info
         a.trades_today = 0
         a.trades_this_hour = 0
         a.last_hour = None
@@ -214,7 +288,6 @@ class ExtremeAwareCore:
             f"Strategy initialized - v{c.version} | {mode_desc}",
             component="Main",
         )
-
 
     # -------------------------------------------------------------------------
     # UNIVERSE SELECTION
@@ -244,39 +317,51 @@ class ExtremeAwareCore:
     # ONDATA + INTRADAY
     # -------------------------------------------------------------------------
 
-    def on_data(self, data) -> None:
-        a = self.algo
 
-        if a.IsWarmingUp:
-            return
+def on_data(self, data) -> None:
+    a = self.algo
 
-        # Log warmup completion once
-        if not getattr(a, "warmup_complete_logged", False):
-            self.logger.info(
-                "WARMUP COMPLETE - Strategy now active",
-                component="Main",
-            )
-            self.alert_manager.send_alert(
-                "info",
-                "Warmup complete - strategy active",
-                component="Main",
-            )
-            a.warmup_complete_logged = True
+    if a.IsWarmingUp:
+        return
 
-        # 1) Run signal pipeline → detections
-        detections = self.signal_pipeline.Run(data)
+    # Log warmup completion once
+    if not getattr(a, "warmup_complete_logged", False):
+        self.logger.info(
+            "WARMUP COMPLETE - Strategy now active",
+            component="Main",
+        )
+        self.alert_manager.send_alert(
+            "info",
+            "Warmup complete - strategy active",
+            component="Main",
+        )
+        a.warmup_complete_logged = True
 
-        # 2) Hand detections to TradeEngine
-        for detection in detections:
-            self.trade_engine.ProcessDetection(detection)
+    # --- DEBUG HEARTBEAT ---
+    minute_bars = getattr(a, "minute_bars", {})
+    self.logger.info(
+        f"OnData heartbeat | symbols={len(minute_bars)}",
+        component="Debug",
+    )
+    # ------------------------
 
-        # 3) Let TradeEngine manage timing + positions
-        self.trade_engine.CheckPendingEntries(data)
-        self.trade_engine.ManagePositions(data)
+    # 1) Run signal pipeline → detections
+    detections = self.signal_pipeline.Run(data)
 
-        # 4) Maintain bar buffers / health
-        self.signal_pipeline.UpdateMinuteBars(data)
+    # --- DEBUG: how many detections? ---
+    self.logger.info(
+        f"SignalPipeline produced {len(detections)} detections",
+        component="Debug",
+    )
+    # -----------------------------------
 
+    # 2) Hand detections to TradeEngine
+    for detection in detections:
+        self.trade_engine.ProcessDetection(detection)
+
+    # 3) Let TradeEngine manage timing + positions
+    self.trade_engine.CheckPendingEntries(data)
+    self.trade_engine.ManagePositions(data)
 
     # -------------------------------------------------------------------------
     # HOURLY SCAN

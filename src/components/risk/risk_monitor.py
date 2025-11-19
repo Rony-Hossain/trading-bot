@@ -89,7 +89,15 @@ class RiskMonitor:
         Args:
             current_time: Current timestamp (algorithm.Time)
             regime_state: Dict from HMMRegime
-            candidates: List of (symbol, extreme_info) tuples
+            candidates: List of detection dicts, e.g.
+                {
+                    "symbol": ...,
+                    "type": "extreme" / "exhaustion" / ...,
+                    "z_score": float (optional),
+                    "vol_anomaly": float (optional),
+                    "direction": "up"/"down"/... (optional),
+                    ...
+                }
         """
         current_date = current_time.date()
 
@@ -98,23 +106,35 @@ class RiskMonitor:
             self._OnNewDay(current_date)
 
         # Update regime tracking
-        self.daily_stats["dominant_regime"] = regime_state["dominant_state"]
-        self.daily_stats["avg_gpm"] = regime_state["gpm"]
+        self.daily_stats["dominant_regime"] = regime_state.get(
+            "dominant_state", "Unknown"
+        )
+        self.daily_stats["avg_gpm"] = regime_state.get("gpm", 0.0)
         self.daily_stats["correlation_breakdown"] = regime_state.get(
             "correlation_breakdown", None
         )
 
-        # Track extremes
-        self.daily_stats["extremes_detected"] += len(candidates)
+        # ---- Track extremes (only those of type 'extreme') ----
+        extreme_dets = [
+            d for d in (candidates or [])
+            if isinstance(d, dict)
+            and str(d.get("type", "")).lower().startswith("extreme")
+        ]
 
-        for symbol, info in candidates:
+        self.daily_stats["extremes_detected"] += len(extreme_dets)
+
+        for det in extreme_dets:
+            symbol = det.get("symbol")
+            if symbol is None:
+                continue
+
             self.extremes_detected.append(
                 {
                     "time": current_time,
                     "symbol": symbol,
-                    "z_score": info["z_score"],
-                    "vol_anomaly": info["vol_anomaly"],
-                    "direction": info["direction"],
+                    "z_score": float(det.get("z_score", 0.0)),
+                    "vol_anomaly": float(det.get("vol_anomaly", 0.0)),
+                    "direction": str(det.get("direction", "unknown")),
                 }
             )
 
@@ -133,6 +153,7 @@ class RiskMonitor:
 
         # Check correlation and other circuit breakers
         self._CheckCircuitBreakers()
+
 
     # --------------------------------------------------------------------- #
     #   CIRCUIT BREAKERS
@@ -383,3 +404,4 @@ class RiskMonitor:
 
         report += f"{'=' * 60}\n"
         return report
+

@@ -11,8 +11,9 @@ from collections import deque
 class HMMRegime:
     """Hidden Markov Model for regime detection"""
 
-    def __init__(self, algorithm):
+    def __init__(self, algorithm, config=None):
         self.algorithm = algorithm
+        self.config = config or getattr(algorithm, "config", None)
         self.config = algorithm.config
 
         # States

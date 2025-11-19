@@ -2,7 +2,14 @@
 from AlgorithmImports import *
 from datetime import datetime
 from typing import Callable
-from src.platform.base import IAlgoHost
+
+try:
+    # Source layout
+    from src.platform.base import IAlgoHost
+except ImportError:
+    # Flat dist layout
+    from base import IAlgoHost
+
 
 
 class QCAlgoHost(IAlgoHost):

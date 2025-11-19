@@ -150,13 +150,14 @@ class TradeEngine:
             detection = entry_info["detection"]
 
             # Get A-VWAP if available
-            avwap_price = None
-            if (
-                self.avwap_tracker is not None
-                and symbol in self.avwap_tracker.avwap_values
-            ):
-                avwap_price = self.avwap_tracker.avwap_values[symbol]
-
+            # avwap_price = None
+            # if (
+            #     self.avwap_tracker is not None
+            #     and symbol in self.avwap_tracker.avwap_values
+            # ):
+            #     avwap_price = self.avwap_tracker.avwap_values[symbol]
+            # Get A-VWAP if available (duck-typed; works with multiple tracker shapes)
+            avwap_price = self._get_avwap(symbol)
             # Check timing
             can_enter, reason = self.entry_timing.CheckEntryTiming(
                 detection, current_price, avwap_price
@@ -189,6 +190,46 @@ class TradeEngine:
         # Remove processed entries
         for symbol in to_remove:
             self.algo.pending_entries.pop(symbol, None)
+
+    def _get_avwap(self, symbol):
+        """
+        Best-effort AVWAP lookup for a symbol.
+
+        Supports several possible AVWAPTracker APIs:
+          - tracker.avwap_values[symbol]
+          - tracker.GetAVWAP(symbol)
+          - tracker.GetCurrentAVWAP(symbol)
+        Returns None if nothing is available or it errors.
+        """
+        tracker = self.avwap_tracker
+        if tracker is None:
+            return None
+
+        # 1) Dict-style attribute: avwap_values
+        if hasattr(tracker, "avwap_values"):
+            try:
+                values = getattr(tracker, "avwap_values") or {}
+                # support dict keyed by Symbol or str
+                return values.get(symbol) or values.get(str(symbol))
+            except Exception:
+                pass
+
+        # 2) Method: GetAVWAP(symbol)
+        if hasattr(tracker, "GetAVWAP"):
+            try:
+                return tracker.GetAVWAP(symbol)
+            except Exception:
+                pass
+
+        # 3) Method: GetCurrentAVWAP(symbol)
+        if hasattr(tracker, "GetCurrentAVWAP"):
+            try:
+                return tracker.GetCurrentAVWAP(symbol)
+            except Exception:
+                pass
+
+        # Nothing usable
+        return None
 
     def ManagePositions(self, data) -> None:
         """Manage open positions (stops, timeouts, EOD exits)."""
@@ -307,9 +348,7 @@ class TradeEngine:
         """Enter a position."""
 
         if symbol not in self.algo.Securities:
-            self.logger.error(
-                f"Symbol not in securities: {symbol}", component="Main"
-            )
+            self.logger.error(f"Symbol not in securities: {symbol}", component="Main")
             return
 
         price = self.algo.Securities[symbol].Price
@@ -355,9 +394,11 @@ class TradeEngine:
                         symbol,
                         shares,
                         fill_price,
-                        regime=self.hmm_regime.GetCurrentRegime().get("regime")
-                        if self.hmm_regime
-                        else None,
+                        regime=(
+                            self.hmm_regime.GetCurrentRegime().get("regime")
+                            if self.hmm_regime
+                            else None
+                        ),
                         direction=direction,
                         timestamp=self.algo.Time,
                         metadata={"detection": detection, "gpm": gpm},

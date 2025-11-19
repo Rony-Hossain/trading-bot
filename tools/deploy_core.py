@@ -202,6 +202,7 @@ class ComponentDiscovery:
         "DATA":      ["data", "feed", "loader", "provider"],
         "EXECUTION": ["executor", "order", "trade", "broker", "fill"],
         "ANALYSIS":  ["analyzer", "backtest", "performance", "metric", "report"],
+        "ENGINE":    ["engine", "adapter", "broker"],
     }
     FIXED_CORES = ["src/main.py", "config/config.py"]
 
@@ -624,6 +625,34 @@ def clean_build(root_dir: Path, platform: str = "quantconnect",
 
 clean_quantconnect = clean_build
 
+
+def _platform_include_patterns(platform: str) -> list[str]:
+    base = ["src/components/**/*.py", "src/**/*.py"]
+
+    # Platform-specific engine folders
+    if platform == "quantconnect":
+        base += [
+            "engines/quantconnect/*.py",
+            "engines/quantconnect/**/*.py",
+        ]
+    elif platform == "backtrader":
+        base += [
+            "engines/backtrader/*.py",
+            "engines/backtrader/**/*.py",
+        ]
+    elif platform == "ibkr":
+        base += [
+            "engines/ibkr/*.py",
+            "engines/ibkr/**/*.py",
+        ]
+    elif platform == "zipline":
+        base += [
+            "engines/zipline/*.py",
+            "engines/zipline/**/*.py",
+        ]
+
+    return base
+
 def build_for_platform(
     root_dir: Path,
     platform: str = "quantconnect",
@@ -657,7 +686,26 @@ def build_for_platform(
     """
     rules_map = load_platform_rules(platform_config) if platform_config else load_platform_rules(None)
     root_dir = Path(root_dir)
-    include, exclude = include or [], exclude or []
+    
+    # User filters for component names (relative paths etc.)
+    include = include or []
+    exclude = exclude or []
+    
+    # ---- NEW: platform-aware discovery patterns ----
+    discovery_patterns = _platform_include_patterns(platform)
+    
+    # Discover components only within the relevant dirs for this platform
+    components = discover_and_list_components(
+        root_dir,
+        include_patterns=discovery_patterns,
+        exclude_patterns=None,   # keep existing default exclude logic inside discovery if you want
+    )
+    
+    # If no explicit include list, include everything discovered
+    if not include:
+        include = list(components.keys())
+    if not exclude:
+        exclude = []
 
     rules = rules_map.get(platform)
     if not rules:
@@ -710,9 +758,17 @@ def build_for_platform(
                     coverage_map[Path(fpath).resolve().as_posix()] = executed
                 except Exception:
                     continue
+                
+    # Decide discovery patterns based on platform
+    include_patterns = _platform_include_patterns(platform)            
 
-    components = discover_and_list_components(root_dir)
+    components = discover_and_list_components(
+        root_dir,
+        include_patterns=include_patterns,
+        exclude_patterns=None
+    )
     # Default include everything discovered if not specified
+    
     if include is None or not include:
        include = list(components.keys())
     if exclude is None:

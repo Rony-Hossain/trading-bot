@@ -32,21 +32,44 @@ class AlertManager:
     Multi-channel alert system for trading strategy
     """
 
+from collections import deque, defaultdict
+from datetime import timedelta
+
+class AlertManager:
     def __init__(self, algorithm, alert_config=None):
         self.algorithm = algorithm
         self.logger = algorithm.logger if hasattr(algorithm, "logger") else None
 
-        # Alert configuration
-        self.config = alert_config or self._default_config()
+        # Alert configuration: can be Config or dict or None
+        self.config = alert_config
+
+        # Small helper so we can read from Config OR dict OR None safely
+        def _cfg(name, default=None):
+            if self.config is None:
+                return default
+            # Config-style attribute access
+            if hasattr(self.config, name):
+                return getattr(self.config, name)
+            # Dict-style access (if you ever pass a dict)
+            if isinstance(self.config, dict):
+                return self.config.get(name, default)
+            return default
 
         # Alert channels
         self.channels = {
-            "email": self.config.get("enable_email", False),
-            "sms": self.config.get("enable_sms", False),
-            "slack": self.config.get("enable_slack", False),
-            "telegram": self.config.get("enable_telegram", False),
+            "email": _cfg("ENABLE_EMAIL_ALERTS", False),
+            "sms": _cfg("ENABLE_SMS_ALERTS", False),
+            "slack": _cfg("ENABLE_SLACK_ALERTS", False),
+            "telegram": _cfg("ENABLE_TELEGRAM_ALERTS", False),
             "qc_notify": True,  # Always available in QC
         }
+
+        # Email-specific settings
+        self.email_to = _cfg("ALERT_EMAIL_TO", None)
+        self.email_subject_prefix = _cfg(
+            "ALERT_EMAIL_SUBJECT_PREFIX",
+            "[ExtremeAware]"
+        )
 
         # Alert history
         self.alert_history = deque(maxlen=1000)
@@ -185,15 +208,29 @@ class AlertManager:
         }
         return emojis.get(level, "")
 
-    def _send_qc_notification(self, message, alert):
-        """Send QuantConnect notification (always available)"""
-        try:
-            # Use QC's Notify method
-            self.algorithm.Notify.Email(
-                subject=f"Trading Alert - {alert['level'].upper()}",
-                message=message,
-                headers=None,
+    def _send_qc_notification(self, message, alert) -> None:
+        """
+        Send a QC notification if email alerts are enabled.
+
+        QC expects: Notify.Email(to, subject, message)
+        """
+        # Respect config channel: if email channel is off, do nothing
+        if not self.channels.get("email", False):
+            return
+
+        # If we don't have a target address, bail out gracefully
+        if not self.email_to:
+            self.algorithm.Log(
+                "AlertManager: email_to not configured, skipping Notify.Email"
             )
+            return
+
+        level = alert.get("level", "info").upper()
+        subject = f"{self.email_subject_prefix} [{level}] {alert.get('component', 'Alert')}"
+
+        try:
+            # Use QC's Notify method: Notify.Email(to, subject, message)
+            self.algorithm.Notify.Email(self.email_to, subject, message)
         except Exception as e:
             if self.logger:
                 self.logger.error(
@@ -201,6 +238,8 @@ class AlertManager:
                     component="AlertManager",
                     exception=e,
                 )
+            else:
+                self.algorithm.Log(f"AlertManager: failed to send QC email: {e}")
 
     def _send_email(self, message, alert):
         """Send email alert (requires configuration)"""

@@ -8,8 +8,15 @@ Engine-specific wrappers live under engines/<engine>/.
 
 from typing import Type
 from config import Config
-from src.core_strategy import ExtremeAwareCore
-from src.platform.base import IAlgoHost  # your Protocol / interface
+
+try:
+    # Source layout
+    from src.core_strategy import ExtremeAwareCore
+    from src.platform.base import IAlgoHost
+except ImportError:
+    # Flat dist layout
+    from core_strategy import ExtremeAwareCore
+    from platform.base import IAlgoHost
 
 
 def build_core(

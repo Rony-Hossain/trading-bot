@@ -30,7 +30,6 @@ Usage:
 from AlgorithmImports import *
 from datetime import datetime, timedelta
 from collections import deque, defaultdict
-import sys
 
 
 class HealthMonitor:
@@ -475,6 +474,65 @@ class HealthMonitor:
                 return False, f"Execution slowing: {old_avg:.2f}s → {recent_avg:.2f}s"
 
         return True, None
+        # --- helpers to read bar fields in a platform-agnostic way ---
+
+    def _get_close(self, bar) -> float:
+        """Return close price from dict or TradeBar."""
+        if isinstance(bar, dict):
+            return float(bar.get("close", 0) or 0)
+        # QC TradeBar
+        if hasattr(bar, "Close"):
+            return float(bar.Close or 0)
+        if hasattr(bar, "close"):
+            return float(bar.close or 0)
+        return 0.0
+
+    def _get_volume(self, bar) -> float:
+        """Return volume from dict or TradeBar."""
+        if isinstance(bar, dict):
+            return float(bar.get("volume", 0) or 0)
+        if hasattr(bar, "Volume"):
+            return float(bar.Volume or 0)
+        if hasattr(bar, "volume"):
+            return float(bar.volume or 0)
+        return 0.0
+
+    def _get_high(self, bar) -> float:
+        if isinstance(bar, dict):
+            return float(bar.get("high", 0) or 0)
+        if hasattr(bar, "High"):
+            return float(bar.High or 0)
+        return 0.0
+
+    def _get_low(self, bar) -> float:
+        if isinstance(bar, dict):
+            return float(bar.get("low", 0) or 0)
+        if hasattr(bar, "Low"):
+            return float(bar.Low or 0)
+        return 0.0
+
+    # --------- bar access helpers (dict or TradeBar) ----------
+
+    def _bar_close(self, bar) -> float:
+        """Return close price from dict or TradeBar."""
+        if isinstance(bar, dict):
+            return float(bar.get("close", 0) or 0)
+        if hasattr(bar, "Close"):
+            return float(bar.Close or 0)
+        if hasattr(bar, "close"):
+            return float(bar.close or 0)
+        return 0.0
+
+    def _bar_time(self, bar):
+        """Return timestamp from dict or TradeBar."""
+        if isinstance(bar, dict):
+            return bar.get("time")
+        # QC TradeBar: prefer EndTime, fallback to Time
+        if hasattr(bar, "EndTime"):
+            return bar.EndTime
+        if hasattr(bar, "Time"):
+            return bar.Time
+        return None
 
     def _check_data_quality(self):
         """Check data quality (no gaps, valid prices)"""
@@ -482,29 +540,33 @@ class HealthMonitor:
         if not hasattr(self.algorithm, "minute_bars"):
             return True, None
 
-        # Check a sample of symbols for data quality
         issues = []
 
+        # Check a sample of symbols for data quality
         for symbol in list(self.algorithm.minute_bars.keys())[:10]:  # Check first 10
             bars = self.algorithm.minute_bars[symbol]
-
             if not bars:
                 continue
 
-            # Check for zero/negative prices
-            for bar in bars[-60:]:  # Last hour
-                if bar.get("close", 0) <= 0:
-                    issues.append(f"{symbol}: Invalid price {bar['close']}")
+            # Check for zero/negative prices in last hour
+            for bar in bars[-60:]:
+                close = self._bar_close(bar)
+                if close <= 0:
+                    issues.append(f"{symbol}: Invalid price {close}")
                     break
 
             # Check for large gaps in time
             if len(bars) >= 2:
                 last_bar = bars[-1]
                 prev_bar = bars[-2]
-                time_gap = (last_bar["time"] - prev_bar["time"]).total_seconds()
 
-                if time_gap > 300:  # >5 minutes gap
-                    issues.append(f"{symbol}: {time_gap/60:.0f}min data gap")
+                t_last = self._bar_time(last_bar)
+                t_prev = self._bar_time(prev_bar)
+
+                if t_last is not None and t_prev is not None:
+                    time_gap = (t_last - t_prev).total_seconds()
+                    if time_gap > 300:  # >5 minutes gap
+                        issues.append(f"{symbol}: {time_gap/60:.0f}min data gap")
 
         if issues:
             return False, f"Data quality issues: {len(issues)} problems found"

@@ -1,6 +1,13 @@
 # engines/zipline/adapter.py
 from __future__ import annotations
-from core_strategy import CoreStrategy, CoreContext
+try:
+    # Source layout
+    from src.core_strategy import CoreStrategy, CoreContext
+except ImportError:
+    # Flat dist layout
+    from core_strategy import CoreStrategy, CoreContext
+
+
 from config import Config
 
 class ZLBroker:
