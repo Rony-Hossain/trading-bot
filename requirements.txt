@@ -1,3 +1,4 @@
+ib-insync
 # Minimal requirements for running unit tests and component utilities locally.
 # Note: The QuantConnect runtime (AlgorithmImports) is not available via pip.
 # To run tests locally you'll need lightweight shims/mocks for QuantConnect APIs

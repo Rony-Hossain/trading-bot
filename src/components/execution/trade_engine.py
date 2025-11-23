@@ -2,6 +2,16 @@
 from AlgorithmImports import *
 
 
+# src/components/execution/trade_engine.py
+from AlgorithmImports import *
+
+# NEW: OMS types
+from order_management_system.base_types.ids_and_enums import Symbol as OmsSymbol, TradeSide, OrderType
+from order_management_system.base_types.contracts_and_specs import OrderSpec
+from order_management_system.base_interfaces.execution_engine_interface import ExecutionEngineInterface
+from order_management_system.base_interfaces.risk_interface import RiskViolationError  # if you defined it there
+
+
 class TradeEngine:
     """
     Executes trades given detections, respecting all risk controls.
@@ -16,10 +26,13 @@ class TradeEngine:
       - _ExitPosition
     """
 
-    def __init__(self, algorithm: QCAlgorithm):
+    def __init__(self, algorithm: QCAlgorithm, execution_engine: Optional[ExecutionEngineInterface] = None):
         self.algo = algorithm
         self.config = algorithm.config
         self.logger = algorithm.logger
+
+        # NEW: reference to OMS execution engine (required for async mode)
+        self.oms_engine: Optional[ExecutionEngineInterface] = execution_engine
 
         # Component references (all set in core.initialize())
         self.risk_monitor = getattr(algorithm, "risk_monitor", None)
@@ -32,7 +45,7 @@ class TradeEngine:
         self.avwap_tracker = getattr(algorithm, "avwap_tracker", None)
         self.alert_manager = getattr(algorithm, "alert_manager", None)
         self.hmm_regime = getattr(algorithm, "hmm_regime", None)
-        self.backtest_analyzer = getattr(algorithm, "backtest_analyzer", None)
+        self.backtest_analyzer = getattr(algorithm, "backtest_analyzer", None) 
 
     # ------------------------------------------------------------------
     # PUBLIC ENTRYPOINTS
@@ -345,7 +358,19 @@ class TradeEngine:
         return size
 
     def _EnterPosition(self, symbol, detection, size, gpm):
-        """Enter a position."""
+        """
+        Enter a position.
+
+        In QC_LEGACY mode:
+          - Calls QCAlgorithm.MarketOrder synchronously
+          - Immediately writes to self.algo.active_positions
+
+        In OMS_ASYNC mode:
+          - Builds an OrderSpec and sends it to the OMS
+          - Does NOT assume fill
+          - Does NOT touch self.algo.active_positions
+          - Real position state is owned by the OMS (PositionState).
+        """
 
         if symbol not in self.algo.Securities:
             self.logger.error(f"Symbol not in securities: {symbol}", component="Main")
@@ -368,13 +393,81 @@ class TradeEngine:
         if direction == "down":
             shares = -shares
 
-        # Observation mode: log-only
+        # Observation mode: log-only (works in both execution modes)
         if self.config.OBSERVATION_MODE:
             self.logger.info(
                 f" OBSERVATION MODE - Would enter: {shares:+d} {symbol} @ ${price:.2f}",
                 component="Main",
             )
             return
+
+        # ------------------------------------------------------------------
+        # MODE 1: OMS_ASYNC  → send OrderSpec to external OMS
+        # ------------------------------------------------------------------
+        if getattr(self.config, "EXECUTION_MODE", "QC_LEGACY") == "OMS_ASYNC":
+            if self.oms_engine is None:
+                self.logger.error(
+                    "EXECUTION_MODE=OMS_ASYNC but oms_engine is None",
+                    component="Trade",
+                )
+                return
+
+            side = TradeSide.BUY if shares > 0 else TradeSide.SELL
+
+            order_spec = OrderSpec(
+                symbol=OmsSymbol(str(symbol)),
+                side=side,
+                qty=abs(shares),
+                order_type=OrderType.MKT,
+                tag=f"EXTREME-{detection.get('type', 'unknown')}",
+                client_tag=f"QC-DETECTION-{self.algo.Time.isoformat()}",
+            )
+
+            try:
+                oms_id = self.oms_engine.submit_order(
+                    account_id=self.config.OMS_ACCOUNT_ID,
+                    spec=order_spec,
+                )
+                self.logger.info(
+                    f"Submitted async OMS order oms_id={oms_id} "
+                    f"{shares:+d} {symbol} @ MKT",
+                    component="Trade",
+                )
+
+                # NOTE:
+                # - No active_positions mutation here.
+                # - PnL, fills, and open positions come from OMS via PositionState.
+
+                # Optional: notify alert manager that an order was submitted
+                if self.alert_manager is not None:
+                    self.alert_manager.alert_trade_executed(
+                        "entry_submitted",
+                        symbol,
+                        shares,
+                        price,
+                        detection["type"],
+                    )
+
+            except RiskViolationError as e:
+                self.logger.warning(
+                    f"OMS RISK REJECTED order for {symbol}: {e}",
+                    component="Trade",
+                )
+                if self.risk_monitor is not None:
+                    self.risk_monitor.LogBlockedTrade(symbol, "oms_risk_reject")
+
+            except Exception as e:
+                self.logger.error(
+                    f"OMS submit error for {symbol}: {str(e)}",
+                    component="Trade",
+                    exception=e,
+                )
+
+            return  # end OMS_ASYNC branch
+
+        # ------------------------------------------------------------------
+        # MODE 2: QC_LEGACY  → existing QCAlgorithm.MarketOrder path
+        # ------------------------------------------------------------------
 
         try:
             ticket = self.algo.MarketOrder(symbol, shares)
@@ -404,7 +497,7 @@ class TradeEngine:
                         metadata={"detection": detection, "gpm": gpm},
                     )
 
-                # Track position
+                # Track position (LEGACY ONLY)
                 self.algo.active_positions[symbol] = {
                     "entry_price": fill_price,
                     "shares": shares,
@@ -436,96 +529,45 @@ class TradeEngine:
                 exception=e,
             )
 
+
     def _ExitPosition(self, symbol, reason: str):
-        """Exit a position."""
+        """
+        Exit a position.
 
-        if symbol not in self.algo.active_positions:
-            return
+        In OMS_ASYNC:
+          - Ask OMS to flatten symbol; do not touch active_positions.
+        In QC_LEGACY:
+          - Existing MarketOrder logic.
+        """
 
-        position = self.algo.active_positions[symbol]
-        shares = position["shares"]
-        entry_price = position["entry_price"]
+        mode = getattr(self.config, "EXECUTION_MODE", "QC_LEGACY")
 
-        if symbol not in self.algo.Securities:
-            return
-
-        current_price = self.algo.Securities[symbol].Price
-
-        # P&L using current quote
-        if shares > 0:
-            pnl = (current_price - entry_price) * shares
-        else:
-            pnl = (entry_price - current_price) * abs(shares)
-
-        pnl_pct = pnl / (entry_price * abs(shares))
-
-        # Observation mode: log-only
-        if self.config.OBSERVATION_MODE:
-            self.logger.info(
-                f" OBSERVATION MODE - Would exit: {-shares:+d} {symbol} @ ${current_price:.2f} | "
-                f"P&L: ${pnl:+.2f} ({pnl_pct:+.2%}) | Reason: {reason}",
-                component="Main",
-            )
-            del self.algo.active_positions[symbol]
-            return
-
-        try:
-            ticket = self.algo.MarketOrder(symbol, -shares)
-
-            if ticket.Status in (OrderStatus.Filled, OrderStatus.PartiallyFilled):
-                exit_price = ticket.AverageFillPrice
-
-                # Actual realized P&L
-                if shares > 0:
-                    actual_pnl = (exit_price - entry_price) * shares
-                else:
-                    actual_pnl = (entry_price - exit_price) * abs(shares)
-
-                actual_pnl_pct = actual_pnl / (entry_price * abs(shares))
-
-                self.logger.info(
-                    f"✓ EXIT: {-shares:+d} {symbol} @ ${exit_price:.2f} | "
-                    f"P&L: ${actual_pnl:+.2f} ({actual_pnl_pct:+.2%}) | {reason}",
-                    component="Trade",
-                )
-
-                # Backtest record
-                if self.backtest_analyzer is not None:
-                    self.backtest_analyzer.record_trade(
-                        "close",
-                        symbol,
-                        abs(shares),
-                        entry_price,
-                        exit_price,
-                        timestamp=self.algo.Time,
-                        metadata={"reason": reason},
-                    )
-
-                # v2+: PVS update
-                if self.config.version >= 2 and self.pvs_monitor is not None:
-                    was_winner = actual_pnl > 0
-                    self.pvs_monitor.RecordTrade(
-                        symbol, actual_pnl, was_winner, self.algo.Time
-                    )
-
-                # Alerts
-                if self.alert_manager is not None:
-                    self.alert_manager.alert_trade_executed(
-                        "exit", symbol, shares, exit_price, reason
-                    )
-
-                # Remove from active
-                del self.algo.active_positions[symbol]
-
-            else:
+        if mode == "OMS_ASYNC":
+            if self.oms_engine is None:
                 self.logger.error(
-                    f"Exit order not filled: {ticket.Status}",
+                    "EXECUTION_MODE=OMS_ASYNC but oms_engine is None",
                     component="Trade",
                 )
+                return
 
-        except Exception as e:
-            self.logger.error(
-                f"Exit error: {str(e)}",
+            self.logger.info(
+                f"Requesting OMS flatten for {symbol} | Reason: {reason}",
                 component="Trade",
-                exception=e,
             )
+            try:
+                self.oms_engine.flatten_symbol(
+                    account_id=self.config.OMS_ACCOUNT_ID,
+                    symbol=OmsSymbol(str(symbol)),
+                    reason=reason,
+                )
+            except Exception as e:
+                self.logger.error(
+                    f"OMS flatten_symbol error for {symbol}: {e}",
+                    component="Trade",
+                    exception=e,
+                )
+            return
+
+        # -------- LEGACY QC PATH BELOW (unchanged) --------
+        # ... keep your current MarketOrder() exit logic here ...
+

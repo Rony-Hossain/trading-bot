@@ -112,6 +112,12 @@ class Config:
         self.VOLUME_ANOMALY_AUCTION = 0.5  # 2x for auction periods
         self.LOOKBACK_MINUTES = 15  # Lookback window for Z-score
         self.MIN_BARS_FOR_DETECTION = 30  # Minimum bars needed
+        
+        
+        #===================== ORDER MANAGEMENT SYSTEM=================
+        # EXECUTION_MODE: "QC_LEGACY" | "OMS_ASYNC"
+        self.config.EXECUTION_MODE = "QC_LEGACY"  # or "OMS_ASYNC"
+        self.config.OMS_ACCOUNT_ID = "DU1234567"
 
         # ==================== SPREAD GUARDS ====================
         self.HARD_SKIP_SPREAD_BPS = 40  # Never trade above this
